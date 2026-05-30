@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Queue</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f4f7f6; min-height: 100vh; display: flex; flex-direction: column; }
+        .content { flex: 1; }
+        .hero { background: #003366; color: white; padding: 40px 0; text-align: center; margin-bottom: 30px; }
+        .serving-box { background: #fff; border: 3px solid #28a745; border-radius: 15px; padding: 20px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .status-card { border-left: 5px solid #007bff; margin-bottom: 10px; }
+        footer { padding: 20px 0; color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <div class="hero shadow">
+            <h1>Virtual Check-In</h1>
+            <p class="lead">Estimated Wait: <strong>{{ wait_time }} mins</strong></p>
+        </div>
+
+        <div class="container" style="max-width: 600px;">
+            <!-- Currently Serving -->
+            {% if serving %}
+            <div class="serving-box text-center animate__animated animate__pulse animate__infinite">
+                <h4 class="text-success">NOW SERVING</h4>
+                <h1 class="display-3">{{ serving.name }}</h1>
+                <span class="badge bg-success">Ticket #{{ serving.id }}</span>
+            </div>
+            {% endif %}
+
+            <!-- Join Form -->
+            <div class="card p-4 mb-4 shadow-sm">
+                <h5 class="mb-3">Join the Line</h5>
+                <form action="/join" method="POST" class="d-flex gap-2">
+                    <input type="text" name="name" class="form-control" placeholder="Enter your name" required>
+                    <button type="submit" class="btn btn-primary">Get Ticket</button>
+                </form>
+            </div>
+
+            <!-- Waitlist -->
+            <h5 class="mb-3">Waiting List ({{ queue|length }})</h5>
+            {% for person in queue %}
+            <div class="card status-card p-3 shadow-sm">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0">{{ person.name }}</h6>
+                        <small class="text-muted">Joined at {{ person.arrival_time }}</small>
+                    </div>
+                    <span class="badge bg-light text-dark border">#{{ person.id }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <footer class="text-center">
+        <hr style="width: 50%; margin: 0 auto 15px auto; opacity: 0.1;">
+        <p>@timothyBale 2026</p>
+    </footer>
+
+    <script>
+        // Refresh page every 10 seconds to show updates
+        setTimeout(function(){ location.reload(); }, 10000);
+    </script>
+</body>
+</html>
