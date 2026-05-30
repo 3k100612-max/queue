@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for
 from datetime import datetime
 import uuid
+import os
 
 app = Flask(__name__)
 
@@ -19,7 +20,7 @@ def join():
     name = request.form.get('name')
     if name:
         ticket = {
-            'id': str(uuid.uuid4())[:4].upper(), # Generates a short ID like 'A1B2'
+            'id': str(uuid.uuid4())[:4].upper(), 
             'name': name,
             'arrival_time': datetime.now().strftime('%H:%M'),
             'status': 'Waiting'
@@ -46,5 +47,7 @@ def complete():
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    # Using port 5001 to avoid common conflicts
-    app.run(debug=True, port=5001)
+    # VPS Optimization: Get port from environment or default to 5001
+    port = int(os.environ.get("PORT", 5001))
+    # host='0.0.0.0' allows external access on your VPS
+    app.run(host='0.0.0.0', port=port, debug=False)
