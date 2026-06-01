@@ -24,11 +24,10 @@ def get_db_connection():
             database=db,
             user=user,
             password=pw,
-            connect_timeout=5 # Prevents long hangs
+            connect_timeout=5 
         )
         return conn
     except Exception as e:
-        # THIS WILL APPEAR IN YOUR HOSTINGER DEPLOYMENT LOGS
         print(f"❌ DATABASE ERROR: {e}") 
         return None
 
@@ -37,7 +36,7 @@ def get_db_connection():
 def index():
     conn = get_db_connection()
     if not conn: 
-        return "Database Connection Error. Check Hostinger logs for the specific error message.", 500
+        return "<h1>Database Offline</h1><p>The app is running, but cannot connect to the DB. Check your Hostinger Env Variables.</p>", 200
     
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -58,8 +57,7 @@ def index():
         est_wait = len(waiting_list) * 10
         return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
     except Exception as e:
-        print(f"❌ QUERY ERROR: {e}")
-        return "Database Table Error. Have you created the tables?", 500
+        return f"Database Table Error: {e}", 200
 
 # --- JOIN QUEUE ACTION ---
 @app.route('/join', methods=['POST'])
@@ -83,7 +81,7 @@ def join_queue():
 @app.route('/admin')
 def admin():
     conn = get_db_connection()
-    if not conn: return "DB Error", 500
+    if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM counters ORDER BY id ASC")
     counters = cur.fetchall()
@@ -122,7 +120,5 @@ def complete_service(que_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    # CRITICAL: Hostinger needs the app to run on a specific port
-    # It will look for the PORT environment variable, otherwise use 8080
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
