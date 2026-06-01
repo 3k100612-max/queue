@@ -29,24 +29,24 @@ def get_db_connection():
 @app.route('/')
 def index():
     conn = get_db_connection()
-    if not conn: return "Database Connection Error", 500
-    
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    
+    # We use 'AS name' and 'AS id' to match the HTML
+    cur.execute("SELECT ticket_code as id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
     
     cur.execute("""
-        SELECT q.ticket_code, q.customer_name, c.name as counter_name 
+        SELECT q.ticket_code as id, q.customer_name as name, c.name as counter_name 
         FROM que q 
         JOIN counters c ON q.counter_id = c.id 
         WHERE q.status = 'Serving'
     """)
     serving_now = cur.fetchall()
     
-    est_wait = len(waiting_list) * 10
     cur.close()
     conn.close()
-    return render_template('index.html', que=waiting_list, serving=serving_now, wait_time=est_wait)
+    return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=len(waiting_list)*10)
+
 
 # --- CUSTOMER: JOIN QUEUE ---
 @app.route('/join', methods=['POST'])
