@@ -26,11 +26,12 @@ def get_db_connection():
 @app.route('/')
 def index():
     conn = get_db_connection()
-    if not conn: return "Database Connection Error", 500
+    if not conn: 
+        return "Database Connection Error: Could not connect to PostgreSQL.", 500
     
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Get Waiting List (Aliased to match HTML: person.id and person.name)
+    # Get Waiting List
     cur.execute("""
         SELECT ticket_code as id, customer_name as name 
         FROM que 
@@ -39,7 +40,7 @@ def index():
     """)
     waiting_list = cur.fetchall()
     
-    # Get Currently Serving (Joined with counters table)
+    # Get Currently Serving
     cur.execute("""
         SELECT q.ticket_code as id, q.customer_name as name, c.name as counter_name 
         FROM que q 
@@ -51,9 +52,7 @@ def index():
     cur.close()
     conn.close()
     
-    # Estimate 10 mins per person in line
     est_wait = len(waiting_list) * 10
-    
     return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
 
 # --- JOIN QUEUE ACTION ---
@@ -63,12 +62,9 @@ def join_queue():
     if name:
         conn = get_db_connection()
         cur = conn.cursor()
-        
-        # Generate a ticket number based on current count
         cur.execute("SELECT COUNT(*) FROM que")
         count = cur.fetchone()[0]
         ticket_id = f"T-{101 + count}"
-        
         cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
                     (name, ticket_id, 'Waiting'))
         conn.commit()
@@ -81,38 +77,30 @@ def join_queue():
 def admin():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
     cur.execute("SELECT * FROM counters ORDER BY id ASC")
     counters = cur.fetchall()
-    
-    cur.execute("SELECT id, customer_name, ticket_code FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    cur.execute("SELECT id, customer_name as name, ticket_code FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
-    
     cur.close()
     conn.close()
     return render_template('admin.html', counters=counters, waiting=waiting)
 
-# --- CALL NEXT CUSTOMER (ADMIN ACTION) ---
+# --- CALL NEXT CUSTOMER ---
 @app.route('/assign/<int:counter_id>')
 def assign_next(counter_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    
-    # Find the next person in line
     cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
     next_person = cur.fetchone()
-    
     if next_person:
-        # Update their status to 'Serving' and link to this counter
         cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", 
                     (counter_id, next_person[0]))
         conn.commit()
-    
     cur.close()
     conn.close()
     return redirect(url_for('admin'))
 
-# --- COMPLETE SERVICE (ADMIN ACTION) ---
+# --- COMPLETE SERVICE ---
 @app.route('/complete/<int:que_id>')
 def complete_service(que_id):
     conn = get_db_connection()
@@ -124,5 +112,4 @@ def complete_service(que_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    # debug=True will show you the exact error in the browser if something fails
     app.run(host='0.0.0.0', port=5000, debug=True)
