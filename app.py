@@ -32,12 +32,9 @@ def index():
     if not conn: return "Database Connection Error", 500
     
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # 1. Get people currently waiting
     cur.execute("SELECT * FROM queue WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
     
-    # 2. Get people currently being served at counters
     cur.execute("""
         SELECT q.ticket_code, q.customer_name, c.name as counter_name 
         FROM queue q 
@@ -47,7 +44,6 @@ def index():
     serving_now = cur.fetchall()
     
     est_wait = len(waiting_list) * 10
-    
     cur.close()
     conn.close()
     return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
@@ -74,16 +70,10 @@ def join():
 def admin():
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Fetch all counters created by Admin
     cur.execute("SELECT * FROM counters ORDER BY name ASC")
     counters = cur.fetchall()
-    
-    # Fetch all waiting customers
     cur.execute("SELECT * FROM queue WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
-
-    # Fetch counter activity (Joins counters with who they are serving)
     cur.execute("""
         SELECT c.id as counter_id, c.name as counter_name, 
                q.id as queue_id, q.ticket_code, q.customer_name
@@ -92,7 +82,6 @@ def admin():
         ORDER BY c.name ASC
     """)
     counter_activity = cur.fetchall()
-    
     cur.close()
     conn.close()
     return render_template('admin.html', counters=counters, waiting=waiting_list, activity=counter_activity)
@@ -115,19 +104,14 @@ def create_counter():
 def assign_next(counter_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    
-    # 1. Find the next person in line
     cur.execute("SELECT id FROM queue WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
     next_user = cur.fetchone()
-    
     if next_user:
-        # 2. Update status and link to the counter
         cur.execute(
             "UPDATE queue SET status = 'Serving', counter_id = %s WHERE id = %s",
             (counter_id, next_user[0])
         )
         conn.commit()
-        
     cur.close()
     conn.close()
     return redirect(url_for('admin'))
@@ -144,5 +128,6 @@ def complete_serving(queue_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5001))
+    # Try port 5000 if 5001 is giving the Gateway error
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
