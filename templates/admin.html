@@ -10,7 +10,6 @@
         .content { flex: 1; }
         .admin-card { background: #2d2d2d; border: none; color: white; border-radius: 12px; }
         .table { color: white; }
-        .counter-badge { font-size: 0.8rem; padding: 5px 10px; }
         footer { padding: 20px 0; color: #888; }
         .btn-finish { color: #ffc107; border-color: #ffc107; }
         .btn-finish:hover { background-color: #ffc107; color: #000; }
@@ -24,9 +23,8 @@
         </div>
 
         <div class="row">
-            <!-- LEFT COLUMN: ADMIN & STAFF CONTROLS -->
+            <!-- LEFT COLUMN: COUNTER CONTROLS -->
             <div class="col-md-5">
-                <!-- 1. ADMIN: CREATE COUNTER -->
                 <div class="card admin-card p-4 shadow mb-4">
                     <h5>Admin: Setup Counters</h5>
                     <form action="/create_counter" method="POST" class="mt-3">
@@ -37,7 +35,6 @@
                     </form>
                 </div>
 
-                <!-- 2. STAFF: COUNTER ACTIVITY -->
                 <div class="card admin-card p-4 shadow mb-4">
                     <h5>Counter Management</h5>
                     <hr class="border-secondary">
@@ -46,63 +43,45 @@
                         <p class="text-muted text-center">No counters created yet.</p>
                     {% endif %}
 
-                   {% for item in activity %}
-<div class="mb-3 p-3 rounded" style="background: #383838;">
-    <div class="d-flex justify-content-between align-items-start">
-        <div>
-            <span class="badge bg-info text-dark mb-1">{{ item.counter_name }}</span>
-            {% if item.ticket_code %}
-                <div class="h5 mb-0">{{ item.ticket_code }}</div>
-                <small class="text-muted">{{ item.customer_name }}</small>
-            {% else %}
-                <div class="text-muted">Idle</div>
-            {% endif %}
-        </div>
-        
-        <div class="text-end">
-            <!-- Action Buttons -->
-            {% if item.ticket_code %}
-                <a href="{{ url_for('complete_serving', queue_id=item.queue_id) }}" class="btn btn-sm btn-finish mb-1 w-100">Finish</a>
-            {% else %}
-                <a href="{{ url_for('assign_next', counter_id=item.counter_id) }}" 
-                   class="btn btn-sm btn-primary mb-1 w-100 {% if not waiting %}disabled{% endif %}">
-                   Call Next
-                </a>
-            {% endif %}
-            
-            <!-- Edit/Delete Links -->
-            <div class="mt-2">
-                <button class="btn btn-link btn-sm text-warning p-0 me-2" onclick="toggleEdit('{{ item.counter_id }}')">Edit</button>
-                <a href="{{ url_for('delete_counter', counter_id=item.counter_id) }}" 
-                   class="btn btn-link btn-sm text-danger p-0" 
-                   onclick="return confirm('Delete this counter?')">Delete</a>
-            </div>
-        </div>
-    </div>
+                    {% for item in activity %}
+                    <div class="mb-3 p-3 rounded" style="background: #383838;">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge bg-info text-dark mb-1">{{ item.counter_name }}</span>
+                                {% if item.ticket_code %}
+                                    <div class="h5 mb-0">{{ item.ticket_code }}</div>
+                                    <small class="text-muted">{{ item.customer_name }}</small>
+                                {% else %}
+                                    <div class="text-muted">Idle</div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="text-end">
+                                {% if item.ticket_code %}
+                                    <a href="{{ url_for('complete_serving', queue_id=item.queue_id) }}" class="btn btn-sm btn-finish mb-1 w-100">Finish</a>
+                                {% else %}
+                                    <a href="{{ url_for('assign_next', counter_id=item.counter_id) }}" 
+                                       class="btn btn-sm btn-primary mb-1 w-100 {% if not waiting %}disabled{% endif %}">
+                                       Call Next
+                                    </a>
+                                {% endif %}
+                                
+                                <div class="mt-2">
+                                    <button class="btn btn-link btn-sm text-warning p-0 me-2" onclick="toggleEdit('{{ item.counter_id }}')">Edit</button>
+                                    <a href="{{ url_for('delete_counter', counter_id=item.counter_id) }}" 
+                                       class="btn btn-link btn-sm text-danger p-0" 
+                                       onclick="return confirm('Delete this counter?')">Delete</a>
+                                </div>
+                            </div>
+                        </div>
 
-    <!-- Hidden Edit Form -->
-    <div id="edit-form-{{ item.counter_id }}" style="display: none;" class="mt-3 pt-2 border-top border-secondary">
-        <form action="{{ url_for('edit_counter', counter_id=item.counter_id) }}" method="POST" class="input-group input-group-sm">
-            <input type="text" name="new_name" class="form-control bg-dark text-white border-secondary" value="{{ item.counter_name }}">
-            <button class="btn btn-success" type="submit">Save</button>
-            <button class="btn btn-outline-secondary" type="button" onclick="toggleEdit('{{ item.counter_id }}')">X</button>
-        </form>
-    </div>
-</div>
-{% endfor %}
-
-
-
-                        
-                        <div>
-                            {% if item.ticket_code %}
-                                <a href="{{ url_for('complete_serving', queue_id=item.queue_id) }}" class="btn btn-sm btn-finish">Finish</a>
-                            {% else %}
-                                <a href="{{ url_for('assign_next', counter_id=item.counter_id) }}" 
-                                   class="btn btn-sm btn-primary {% if not waiting %}disabled{% endif %}">
-                                   Call Next
-                                </a>
-                            {% endif %}
+                        <!-- Hidden Edit Form -->
+                        <div id="edit-form-{{ item.counter_id }}" style="display: none;" class="mt-3 pt-2 border-top border-secondary">
+                            <form action="{{ url_for('edit_counter', counter_id=item.counter_id) }}" method="POST" class="input-group input-group-sm">
+                                <input type="text" name="new_name" class="form-control bg-dark text-white border-secondary" value="{{ item.counter_name }}">
+                                <button class="btn btn-success" type="submit">Save</button>
+                                <button class="btn btn-outline-secondary" type="button" onclick="toggleEdit('{{ item.counter_id }}')">X</button>
+                            </form>
                         </div>
                     </div>
                     {% endfor %}
@@ -143,15 +122,12 @@
         <hr style="width: 30%; margin: 0 auto 15px auto; border-color: #444;">
         <p>@timothyBale 2026</p>
     </footer>
-</body>
-<script>
-function toggleEdit(id) {
-    var x = document.getElementById("edit-form-" + id);
-    if (x.style.display === "none") {
-        x.style.display = "block";
-    } else {
-        x.style.display = "none";
+
+    <script>
+    function toggleEdit(id) {
+        var x = document.getElementById("edit-form-" + id);
+        x.style.display = (x.style.display === "none") ? "block" : "none";
     }
-}
-</script>
+    </script>
+</body>
 </html>
