@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 def get_db_connection():
     # Fetch credentials from environment variables
-    host = os.getenv('DB_HOST', '187.77.147.127')
+    host = os.getenv('DB_HOST', '0.0.0.0')
     db = os.getenv('DB_NAME', 'queue')
     user = os.getenv('DB_USER', 'postgres')
     pw = os.getenv('DB_PASSWORD')
