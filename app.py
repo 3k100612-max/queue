@@ -124,6 +124,35 @@ def complete_serving(queue_id):
         conn.close()
     return redirect(url_for('admin'))
 
+# --- EDIT COUNTER NAME ---
+@app.route('/edit_counter/<int:counter_id>', methods=['POST'])
+def edit_counter(counter_id):
+    new_name = request.form.get('new_name')
+    conn = get_db_connection()
+    if conn and new_name:
+        cur = conn.cursor()
+        cur.execute("UPDATE counters SET name = %s WHERE id = %s", (new_name, counter_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+# --- DELETE COUNTER ---
+@app.route('/delete_counter/<int:counter_id>')
+def delete_counter(counter_id):
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        # First, set any active queue items for this counter to NULL so we don't get a Foreign Key error
+        cur.execute("UPDATE que SET counter_id = NULL WHERE counter_id = %s", (counter_id,))
+        # Now delete the counter
+        cur.execute("DELETE FROM counters WHERE id = %s", (counter_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
