@@ -10,31 +10,26 @@ load_dotenv()
 app = Flask(__name__)
 
 def get_db_connection():
-    # --- DEBUG SECTION ---
-    # This will print to your terminal to help us find the error
+    # Fetch credentials from environment variables
     host = os.getenv('DB_HOST', '127.0.0.1')
     db = os.getenv('DB_NAME', 'queue')
     user = os.getenv('DB_USER', 'postgres')
     pw = os.getenv('DB_PASSWORD')
     
-    print(f"--- Attempting Connection ---")
-    print(f"Host: {host}")
-    print(f"Database: {db}")
-    print(f"User: {user}")
-    print(f"Password Loaded: {'Yes (Length: ' + str(len(pw)) + ')' if pw else 'NO - .env NOT FOUND'}")
-    print(f"-----------------------------")
-    # --- END DEBUG ---
-
+    print(f"--- Attempting Connection to {host} ---")
+    
     try:
         conn = psycopg2.connect(
             host=host,
             database=db,
             user=user,
-            password=pw
+            password=pw,
+            connect_timeout=5 # Prevents long hangs
         )
         return conn
     except Exception as e:
-        print(f"❌ DATABASE ERROR: {e}") # This will show the EXACT error message
+        # THIS WILL APPEAR IN YOUR HOSTINGER DEPLOYMENT LOGS
+        print(f"❌ DATABASE ERROR: {e}") 
         return None
 
 # --- CUSTOMER VIEW ---
@@ -42,25 +37,29 @@ def get_db_connection():
 def index():
     conn = get_db_connection()
     if not conn: 
-        return "Database Connection Error: Check your terminal for the specific error message.", 500
+        return "Database Connection Error. Check Hostinger logs for the specific error message.", 500
     
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT ticket_code as id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
-    waiting_list = cur.fetchall()
-    
-    cur.execute("""
-        SELECT q.ticket_code as id, q.customer_name as name, c.name as counter_name 
-        FROM que q 
-        JOIN counters c ON q.counter_id = c.id 
-        WHERE q.status = 'Serving'
-    """)
-    serving_now = cur.fetchall()
-    
-    cur.close()
-    conn.close()
-    
-    est_wait = len(waiting_list) * 10
-    return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
+    try:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT ticket_code as id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+        waiting_list = cur.fetchall()
+        
+        cur.execute("""
+            SELECT q.ticket_code as id, q.customer_name as name, c.name as counter_name 
+            FROM que q 
+            LEFT JOIN counters c ON q.counter_id = c.id 
+            WHERE q.status = 'Serving'
+        """)
+        serving_now = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        est_wait = len(waiting_list) * 10
+        return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
+    except Exception as e:
+        print(f"❌ QUERY ERROR: {e}")
+        return "Database Table Error. Have you created the tables?", 500
 
 # --- JOIN QUEUE ACTION ---
 @app.route('/join', methods=['POST'])
@@ -123,4 +122,7 @@ def complete_service(que_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # CRITICAL: Hostinger needs the app to run on a specific port
+    # It will look for the PORT environment variable, otherwise use 8080
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
