@@ -120,5 +120,18 @@ def complete_service(que_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    # Get the port from the environment
+    raw_port = os.environ.get('PORT')
+    
+    # If the port is missing or empty, default to 8080
+    if not raw_port or raw_port.strip() == "":
+        port = 8080
+    else:
+        try:
+            port = int(raw_port)
+        except ValueError:
+            port = 8080
+            
+    print(f"🚀 App starting on port {port}")
     app.run(host='0.0.0.0', port=port)
+
