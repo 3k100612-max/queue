@@ -4,31 +4,19 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-# Load database credentials from .env file
 load_dotenv()
-
 app = Flask(__name__)
 
 def get_db_connection():
-    # Fetch credentials from environment variables
-    host = os.getenv('DB_HOST', '0.0.0.0')
+    host = os.getenv('DB_HOST', '127.0.0.1')
     db = os.getenv('DB_NAME', 'queue')
     user = os.getenv('DB_USER', 'postgres')
     pw = os.getenv('DB_PASSWORD')
-    
-    print(f"--- Attempting Connection to {host} ---")
-    
     try:
-        conn = psycopg2.connect(
-            host=host,
-            database=db,
-            user=user,
-            password=pw,
-            connect_timeout=5 
-        )
+        conn = psycopg2.connect(host=host, database=db, user=user, password=pw, connect_timeout=5)
         return conn
     except Exception as e:
-        print(f"❌ DATABASE ERROR: {e}") 
+        print(f"❌ DB ERROR: {e}")
         return None
 
 # --- CUSTOMER VIEW ---
@@ -36,45 +24,39 @@ def get_db_connection():
 def index():
     conn = get_db_connection()
     if not conn: 
-        return "<h1>Database Offline</h1><p>The app is running, but cannot connect to the DB. Check your Hostinger Env Variables.</p>", 200
+        return "<h1>Database Offline</h1>", 200
     
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT ticket_code as id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
-        waiting_list = cur.fetchall()
-        
-        cur.execute("""
-            SELECT q.ticket_code as id, q.customer_name as name, c.name as counter_name 
-            FROM que q 
-            LEFT JOIN counters c ON q.counter_id = c.id 
-            WHERE q.status = 'Serving'
-        """)
-        serving_now = cur.fetchall()
-        
-        cur.close()
-        conn.close()
-        
-        est_wait = len(waiting_list) * 10
-        return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
-    except Exception as e:
-        return f"Database Table Error: {e}", 200
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    # Fetch waiting list
+    cur.execute("SELECT id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    waiting_list = cur.fetchall()
+    
+    # Fetch serving now
+    cur.execute("""
+        SELECT q.id, q.customer_name as name, c.name as counter_name 
+        FROM que q 
+        JOIN counters c ON q.counter_id = c.id 
+        WHERE q.status = 'Serving'
+    """)
+    serving_now = cur.fetchall()
+    
+    est_wait = len(waiting_list) * 10
+    cur.close()
+    conn.close()
+    return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
 
-# --- JOIN QUEUE ACTION ---
+# --- JOIN QUEUE ---
 @app.route('/join', methods=['POST'])
 def join_queue():
     name = request.form.get('name')
-    if name:
-        conn = get_db_connection()
-        if conn:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM que")
-            count = cur.fetchone()[0]
-            ticket_id = f"T-{101 + count}"
-            cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
-                        (name, ticket_id, 'Waiting'))
-            conn.commit()
-            cur.close()
-            conn.close()
+    conn = get_db_connection()
+    if conn and name:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
+                    (name, 'T-NEW', 'Waiting'))
+        conn.commit()
+        cur.close()
+        conn.close()
     return redirect(url_for('index'))
 
 # --- ADMIN VIEW ---
@@ -83,55 +65,65 @@ def admin():
     conn = get_db_connection()
     if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM counters ORDER BY id ASC")
-    counters = cur.fetchall()
-    cur.execute("SELECT id, customer_name as name, ticket_code FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    
+    # 1. Fetch Waiting List
+    cur.execute("SELECT id, customer_name, ticket_code FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
+    
+    # 2. Fetch Activity (Counters + who they are serving)
+    # This matches the 'activity' variable in your admin.html
+    cur.execute("""
+        SELECT c.id as counter_id, c.name as counter_name, q.ticket_code, q.customer_name, q.id as queue_id
+        FROM counters c
+        LEFT JOIN que q ON c.id = q.counter_id AND q.status = 'Serving'
+        ORDER BY c.id ASC
+    """)
+    activity = cur.fetchall()
+    
     cur.close()
     conn.close()
-    return render_template('admin.html', counters=counters, waiting=waiting)
+    return render_template('admin.html', waiting=waiting, activity=activity)
 
-# --- CALL NEXT CUSTOMER ---
+# --- CREATE COUNTER ---
+@app.route('/create_counter', methods=['POST'])
+def create_counter():
+    name = request.form.get('counter_name')
+    conn = get_db_connection()
+    if conn and name:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO counters (name) VALUES (%s)", (name,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+# --- CALL NEXT ---
 @app.route('/assign/<int:counter_id>')
 def assign_next(counter_id):
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
         cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
-        next_person = cur.fetchone()
-        if next_person:
-            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", 
-                        (counter_id, next_person[0]))
+        next_p = cur.fetchone()
+        if next_p:
+            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", (counter_id, next_p[0]))
             conn.commit()
         cur.close()
         conn.close()
     return redirect(url_for('admin'))
 
-# --- COMPLETE SERVICE ---
-@app.route('/complete/<int:que_id>')
-def complete_service(que_id):
+# --- COMPLETE (Renamed to match your HTML complete_serving) ---
+@app.route('/complete/<int:queue_id>')
+def complete_serving(queue_id):
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
-        cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (que_id,))
+        cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (queue_id,))
         conn.commit()
         cur.close()
         conn.close()
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    # Get the port from the environment
-    raw_port = os.environ.get('PORT')
-    
-    # If the port is missing or empty, default to 8080
-    if not raw_port or raw_port.strip() == "":
-        port = 8080
-    else:
-        try:
-            port = int(raw_port)
-        except ValueError:
-            port = 8080
-            
-    print(f"🚀 App starting on port {port}")
+    port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
-
