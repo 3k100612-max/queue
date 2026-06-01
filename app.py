@@ -10,16 +10,31 @@ load_dotenv()
 app = Flask(__name__)
 
 def get_db_connection():
+    # --- DEBUG SECTION ---
+    # This will print to your terminal to help us find the error
+    host = os.getenv('DB_HOST', '127.0.0.1')
+    db = os.getenv('DB_NAME', 'queue')
+    user = os.getenv('DB_USER', 'postgres')
+    pw = os.getenv('DB_PASSWORD')
+    
+    print(f"--- Attempting Connection ---")
+    print(f"Host: {host}")
+    print(f"Database: {db}")
+    print(f"User: {user}")
+    print(f"Password Loaded: {'Yes (Length: ' + str(len(pw)) + ')' if pw else 'NO - .env NOT FOUND'}")
+    print(f"-----------------------------")
+    # --- END DEBUG ---
+
     try:
         conn = psycopg2.connect(
-            host=os.getenv('DB_HOST', 'localhost'),
-            database=os.getenv('DB_NAME', 'queue'),
-            user=os.getenv('DB_USER', 'postgres'),
-            password=os.getenv('DB_PASSWORD')
+            host=host,
+            database=db,
+            user=user,
+            password=pw
         )
         return conn
     except Exception as e:
-        print(f"❌ Database Connection Error: {e}")
+        print(f"❌ DATABASE ERROR: {e}") # This will show the EXACT error message
         return None
 
 # --- CUSTOMER VIEW ---
@@ -27,20 +42,12 @@ def get_db_connection():
 def index():
     conn = get_db_connection()
     if not conn: 
-        return "Database Connection Error: Could not connect to PostgreSQL.", 500
+        return "Database Connection Error: Check your terminal for the specific error message.", 500
     
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Get Waiting List
-    cur.execute("""
-        SELECT ticket_code as id, customer_name as name 
-        FROM que 
-        WHERE status = 'Waiting' 
-        ORDER BY id ASC
-    """)
+    cur.execute("SELECT ticket_code as id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
     
-    # Get Currently Serving
     cur.execute("""
         SELECT q.ticket_code as id, q.customer_name as name, c.name as counter_name 
         FROM que q 
@@ -61,21 +68,23 @@ def join_queue():
     name = request.form.get('name')
     if name:
         conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM que")
-        count = cur.fetchone()[0]
-        ticket_id = f"T-{101 + count}"
-        cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
-                    (name, ticket_id, 'Waiting'))
-        conn.commit()
-        cur.close()
-        conn.close()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM que")
+            count = cur.fetchone()[0]
+            ticket_id = f"T-{101 + count}"
+            cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
+                        (name, ticket_id, 'Waiting'))
+            conn.commit()
+            cur.close()
+            conn.close()
     return redirect(url_for('index'))
 
 # --- ADMIN VIEW ---
 @app.route('/admin')
 def admin():
     conn = get_db_connection()
+    if not conn: return "DB Error", 500
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM counters ORDER BY id ASC")
     counters = cur.fetchall()
@@ -89,26 +98,28 @@ def admin():
 @app.route('/assign/<int:counter_id>')
 def assign_next(counter_id):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
-    next_person = cur.fetchone()
-    if next_person:
-        cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", 
-                    (counter_id, next_person[0]))
-        conn.commit()
-    cur.close()
-    conn.close()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
+        next_person = cur.fetchone()
+        if next_person:
+            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", 
+                        (counter_id, next_person[0]))
+            conn.commit()
+        cur.close()
+        conn.close()
     return redirect(url_for('admin'))
 
 # --- COMPLETE SERVICE ---
 @app.route('/complete/<int:que_id>')
 def complete_service(que_id):
     conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (que_id,))
-    conn.commit()
-    cur.close()
-    conn.close()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (que_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
