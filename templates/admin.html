@@ -8,9 +8,12 @@
     <style>
         body { background-color: #1a1a1a; color: #fff; min-height: 100vh; display: flex; flex-direction: column; }
         .content { flex: 1; }
-        .admin-card { background: #2d2d2d; border: none; color: white; }
+        .admin-card { background: #2d2d2d; border: none; color: white; border-radius: 12px; }
         .table { color: white; }
+        .counter-badge { font-size: 0.8rem; padding: 5px 10px; }
         footer { padding: 20px 0; color: #888; }
+        .btn-finish { color: #ffc107; border-color: #ffc107; }
+        .btn-finish:hover { background-color: #ffc107; color: #000; }
     </style>
 </head>
 <body>
@@ -21,27 +24,57 @@
         </div>
 
         <div class="row">
-            <!-- Controls -->
-            <div class="col-md-4">
+            <!-- LEFT COLUMN: ADMIN & STAFF CONTROLS -->
+            <div class="col-md-5">
+                <!-- 1. ADMIN: CREATE COUNTER -->
                 <div class="card admin-card p-4 shadow mb-4">
-                    <h4>Actions</h4>
+                    <h5>Admin: Setup Counters</h5>
+                    <form action="/create_counter" method="POST" class="mt-3">
+                        <div class="input-group">
+                            <input type="text" name="counter_name" class="form-control bg-dark text-white border-secondary" placeholder="e.g. Counter A" required>
+                            <button class="btn btn-primary" type="submit">Add</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 2. STAFF: COUNTER ACTIVITY -->
+                <div class="card admin-card p-4 shadow mb-4">
+                    <h5>Counter Management</h5>
                     <hr class="border-secondary">
-                    {% if serving %}
-                        <p class="mb-1">Currently serving:</p>
-                        <h3 class="text-info">{{ serving.name }}</h3>
-                        <a href="/complete" class="btn btn-outline-warning w-100 mt-3">Finish Session</a>
-                    {% else %}
-                        <p class="text-muted">No one is being served.</p>
-                    {% endif %}
                     
-                    <a href="/call_next" class="btn btn-primary w-100 mt-3 {% if not queue %}disabled{% endif %}">
-                        Call Next Person
-                    </a>
+                    {% if not activity %}
+                        <p class="text-muted text-center">No counters created yet.</p>
+                    {% endif %}
+
+                    {% for item in activity %}
+                    <div class="d-flex justify-content-between align-items-center mb-3 p-3 rounded" style="background: #383838;">
+                        <div>
+                            <span class="badge bg-info text-dark mb-1">{{ item.counter_name }}</span>
+                            {% if item.ticket_code %}
+                                <div class="h5 mb-0">{{ item.ticket_code }}</div>
+                                <small class="text-muted">{{ item.customer_name }}</small>
+                            {% else %}
+                                <div class="text-muted">Idle</div>
+                            {% endif %}
+                        </div>
+                        
+                        <div>
+                            {% if item.ticket_code %}
+                                <a href="{{ url_for('complete_serving', queue_id=item.queue_id) }}" class="btn btn-sm btn-finish">Finish</a>
+                            {% else %}
+                                <a href="{{ url_for('assign_next', counter_id=item.counter_id) }}" 
+                                   class="btn btn-sm btn-primary {% if not waiting %}disabled{% endif %}">
+                                   Call Next
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
 
-            <!-- List -->
-            <div class="col-md-8">
+            <!-- RIGHT COLUMN: UPCOMING QUEUE -->
+            <div class="col-md-7">
                 <div class="card admin-card p-4 shadow">
                     <h4>Upcoming Queue</h4>
                     <table class="table table-hover mt-3">
@@ -49,22 +82,20 @@
                             <tr class="text-secondary">
                                 <th>Ticket</th>
                                 <th>Name</th>
-                                <th>Arrival</th>
                                 <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for person in queue %}
+                            {% for person in waiting %}
                             <tr>
-                                <td><code class="text-info">{{ person.id }}</code></td>
-                                <td>{{ person.name }}</td>
-                                <td>{{ person.arrival_time }}</td>
+                                <td><code class="text-info">{{ person.ticket_code }}</code></td>
+                                <td>{{ person.customer_name }}</td>
                                 <td><span class="badge bg-secondary">Waiting</span></td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
-                    {% if not queue %}
+                    {% if not waiting %}
                         <p class="text-center text-muted">The queue is empty.</p>
                     {% endif %}
                 </div>
