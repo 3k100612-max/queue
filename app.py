@@ -120,5 +120,5 @@ def complete_service(que_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 3000))
     app.run(host='0.0.0.0', port=port)
