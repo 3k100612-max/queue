@@ -32,12 +32,12 @@ def index():
     if not conn: return "Database Connection Error", 500
     
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT * FROM queue WHERE status = 'Waiting' ORDER BY id ASC")
+    cur.execute("SELECT * FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
     
     cur.execute("""
         SELECT q.ticket_code, q.customer_name, c.name as counter_name 
-        FROM queue q 
+        FROM que q 
         JOIN counters c ON q.counter_id = c.id 
         WHERE q.status = 'Serving'
     """)
@@ -46,7 +46,7 @@ def index():
     est_wait = len(waiting_list) * 10
     cur.close()
     conn.close()
-    return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=est_wait)
+    return render_template('index.html', que=waiting_list, serving=serving_now, wait_time=est_wait)
 
 # --- CUSTOMER: JOIN QUEUE ---
 @app.route('/join', methods=['POST'])
@@ -57,7 +57,7 @@ def join():
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO queue (ticket_code, customer_name, status) VALUES (%s, %s, %s)",
+            "INSERT INTO que (ticket_code, customer_name, status) VALUES (%s, %s, %s)",
             (ticket_code, name, 'Waiting')
         )
         conn.commit()
@@ -72,13 +72,13 @@ def admin():
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("SELECT * FROM counters ORDER BY name ASC")
     counters = cur.fetchall()
-    cur.execute("SELECT * FROM queue WHERE status = 'Waiting' ORDER BY id ASC")
+    cur.execute("SELECT * FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
     cur.execute("""
         SELECT c.id as counter_id, c.name as counter_name, 
-               q.id as queue_id, q.ticket_code, q.customer_name
+               q.id as que_id, q.ticket_code, q.customer_name
         FROM counters c
-        LEFT JOIN queue q ON c.id = q.counter_id AND q.status = 'Serving'
+        LEFT JOIN que q ON c.id = q.counter_id AND q.status = 'Serving'
         ORDER BY c.name ASC
     """)
     counter_activity = cur.fetchall()
@@ -104,11 +104,11 @@ def create_counter():
 def assign_next(counter_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM queue WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
+    cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
     next_user = cur.fetchone()
     if next_user:
         cur.execute(
-            "UPDATE queue SET status = 'Serving', counter_id = %s WHERE id = %s",
+            "UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s",
             (counter_id, next_user[0])
         )
         conn.commit()
@@ -117,11 +117,11 @@ def assign_next(counter_id):
     return redirect(url_for('admin'))
 
 # --- STAFF: COMPLETE SERVING ---
-@app.route('/complete_serving/<int:queue_id>')
-def complete_serving(queue_id):
+@app.route('/complete_serving/<int:que_id>')
+def complete_serving(que_id):
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE queue SET status = 'Completed' WHERE id = %s", (queue_id,))
+    cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (que_id,))
     conn.commit()
     cur.close()
     conn.close()
