@@ -46,7 +46,7 @@
                         <p class="text-muted text-center">No counters created yet.</p>
                     {% endif %}
 
-                    {% for item in activity %}
+                   {% for item in activity %}
 <div class="mb-3 p-3 rounded" style="background: #383838;">
     <div class="d-flex justify-content-between align-items-start">
         <div>
@@ -91,17 +91,7 @@
 </div>
 {% endfor %}
 
-<!-- Add this small script at the bottom of admin.html before </body> -->
-<script>
-function toggleEdit(id) {
-    var x = document.getElementById("edit-form-" + id);
-    if (x.style.display === "none") {
-        x.style.display = "block";
-    } else {
-        x.style.display = "none";
-    }
-}
-</script>
+
 
                         
                         <div>
@@ -155,3 +145,15 @@ function toggleEdit(id) {
     </footer>
 </body>
 </html>
+
+<!-- Add this small script at the bottom of admin.html before </body> -->
+<script>
+function toggleEdit(id) {
+    var x = document.getElementById("edit-form-" + id);
+    if (x.style.display === "none") {
+        x.style.display = "block";
+    } else {
+        x.style.display = "none";
+    }
+}
+</script>
