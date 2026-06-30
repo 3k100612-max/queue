@@ -6,6 +6,9 @@ from flask import Flask, render_template, request, redirect, url_for, send_file,
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz
+
 
 load_dotenv()
 app = Flask(__name__)
@@ -56,13 +59,23 @@ def join_queue():
         conn = get_db_connection()
         if conn and name:
             cur = conn.cursor()
-            cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
-                        (name, 'MOBILE', 'Waiting'))
+            
+            # 1. Get the current time in Manila
+            manila_tz = pytz.timezone('Asia/Manila')
+            ph_time = datetime.now(manila_tz)
+            
+            # 2. Update the INSERT to include created_at
+            cur.execute("""
+                INSERT INTO que (customer_name, ticket_code, status, created_at) 
+                VALUES (%s, %s, %s, %s)
+            """, (name, 'MOBILE', 'Waiting', ph_time))
+            
             conn.commit()
             cur.close()
             conn.close()
             return render_template('success.html', name=name)
     return render_template('join_form.html')
+
 
 @app.route('/admin')
 def admin():
