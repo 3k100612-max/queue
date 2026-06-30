@@ -4,3 +4,4 @@ opencv-python
 pyzbar 
 psycopg2-binary
 python-dotenv
+qrcode[pil]
