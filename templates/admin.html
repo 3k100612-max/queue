@@ -17,31 +17,40 @@
             <a href="/" class="btn btn-outline-secondary btn-sm">View Big Screen</a>
         </div>
 
+       <div class="row">
+    <!-- COUNTERS -->
+    <div class="col-md-8">
         <div class="row">
-            <!-- COUNTERS -->
-            <div class="col-md-8">
-                <div class="row">
-                    {% for c in activity %}
-                    <div class="col-md-6 mb-4">
-                        <div class="card counter-card h-100 shadow-sm {% if c.customer_name %}active{% endif %}">
-                            <div class="card-body text-center">
-                                <h5 class="card-title text-muted">{{ c.counter_name }}</h5>
-                                <hr>
-                                {% if c.customer_name %}
-                                    <h3 class="fw-bold text-success">{{ c.customer_name }}</h3>
-                                    <p class="text-muted">Ticket #{{ c.queue_id }}</p>
-                                    <a href="/complete/{{ c.queue_id }}" class="btn btn-success w-100">Finish Service</a>
-                                {% else %}
-                                    <h3 class="text-muted">Idle</h3>
-                                    <p class="small">Ready for next</p>
-                                    <a href="/assign/{{ c.counter_id }}" class="btn btn-primary w-100">Call Next</a>
-                                {% endif %}
-                            </div>
-                        </div>
+            {% for c in activity %}
+            <div class="col-md-6 mb-4">
+                <div class="card counter-card h-100 shadow-sm {% if c.customer_name %}active{% endif %}">
+                    <div class="card-body text-center">
+                        <h5 class="card-title text-muted">{{ c.counter_name }}</h5>
+                        <hr>
+                        {% if c.customer_name %}
+                            <h3 class="fw-bold text-success">{{ c.customer_name }}</h3>
+                            <p class="text-muted">Ticket #{{ c.queue_id }}</p>
+                            <a href="/complete/{{ c.queue_id }}" class="btn btn-success w-100">Finish Service</a>
+                        {% else %}
+                            <h3 class="text-muted">Idle</h3>
+                            <p class="small">Ready for next</p>
+                            <a href="/assign/{{ c.counter_id }}" class="btn btn-primary w-100">Call Next</a>
+                        {% endif %}
                     </div>
-                    {% endfor %}
                 </div>
             </div>
+            {% else %}
+            <!-- This will show if the 'activity' list is empty -->
+            <div class="col-12">
+                <div class="alert alert-warning">
+                    No counters found in the database. Please add counters to the 'counters' table.
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
 
             <!-- WAITING LIST -->
             <div class="col-md-4">
