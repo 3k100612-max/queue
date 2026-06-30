@@ -2,22 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Queue Status</title>
+    <title>Live Queue Status</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
         body { background-color: #001a33; color: white; height: 100vh; overflow: hidden; }
         .left-panel { border-right: 4px solid #003366; height: 100vh; padding: 40px; overflow-y: auto; }
         .right-panel { height: 100vh; padding: 40px; background: #fff; color: #333; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
         .serving-card { background: #f8f9fa; border-radius: 15px; border-left: 10px solid #28a745; margin-bottom: 20px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        .qr-code-img { width: 300px; border: 10px solid #001a33; border-radius: 20px; }
+        .qr-code-img { width: 320px; border: 12px solid #001a33; border-radius: 25px; }
     </style>
 </head>
 <body>
 
 <div class="container-fluid">
     <div class="row">
-        
-        <!-- ⬅️ LEFT SIDE: STATUS -->
+        <!-- LEFT: QUEUE STATUS -->
         <div class="col-md-7 left-panel">
             <h1 class="display-4 fw-bold mb-5">Queue Status</h1>
             
@@ -25,7 +24,7 @@
                 <h3 class="text-info border-bottom pb-2 mb-4">Currently Serving</h3>
                 <div class="row">
                     {% for person in serving %}
-                    <div class="col-6">
+                    <div class="col-6 mb-3">
                         <div class="serving-card text-center">
                             <small class="text-muted text-uppercase">Counter: {{ person.counter_name }}</small>
                             <h2 class="fw-bold">{{ person.name }}</h2>
@@ -33,7 +32,7 @@
                         </div>
                     </div>
                     {% else %}
-                    <div class="col-12 text-muted italic">Waiting for next customer...</div>
+                    <div class="col-12 text-muted">No active service at the moment.</div>
                     {% endfor %}
                 </div>
             </div>
@@ -51,10 +50,10 @@
             </div>
         </div>
 
-        <!-- ➡️ RIGHT SIDE: JOIN QR -->
+        <!-- RIGHT: JOIN QR -->
         <div class="col-md-5 right-panel">
-            <h1 class="display-5 fw-bold mb-3" style="color: #001a33;">Join the Queue</h1>
-            <p class="h4 mb-4 text-muted">Scan the QR code with your phone to check-in</p>
+            <h1 class="display-5 fw-bold mb-3" style="color: #001a33;">Join the Line</h1>
+            <p class="h4 mb-4 text-muted">Scan with your phone to check-in</p>
             
             <img src="/qr_code" class="qr-code-img shadow-lg mb-4">
             
@@ -62,12 +61,10 @@
                 Estimated Wait: <strong>{{ wait_time }} mins</strong>
             </div>
         </div>
-
     </div>
 </div>
 
 <script>
-    // Auto-refresh the dashboard every 10 seconds to show new users
     setTimeout(function(){ location.reload(); }, 10000);
 </script>
 </body>
