@@ -9,9 +9,11 @@ from dotenv import load_dotenv
 from datetime import datetime
 import pytz
 
-
 load_dotenv()
 app = Flask(__name__)
+
+# Global Timezone Setting
+MANILA_TZ = pytz.timezone('Asia/Manila')
 
 def get_db_connection():
     try:
@@ -60,11 +62,10 @@ def join_queue():
         if conn and name:
             cur = conn.cursor()
             
-            # 1. Get the current time in Manila
-            manila_tz = pytz.timezone('Asia/Manila')
-            ph_time = datetime.now(manila_tz)
+            # 1. Capture current time in Manila
+            ph_time = datetime.now(MANILA_TZ)
             
-            # 2. Update the INSERT to include created_at
+            # 2. Insert with explicit PHT timestamp
             cur.execute("""
                 INSERT INTO que (customer_name, ticket_code, status, created_at) 
                 VALUES (%s, %s, %s, %s)
@@ -82,9 +83,19 @@ def admin():
     conn = get_db_connection()
     if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    # Added created_at to the selection
+    
     cur.execute("SELECT id, customer_name, ticket_code, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
+
+    # --- FORMAT TIME FOR ADMIN DISPLAY ---
+    for row in waiting:
+        if row['created_at']:
+            # Convert DB time to Manila TZ and format to 12-hour AM/PM
+            local_time = row['created_at'].astimezone(MANILA_TZ)
+            row['formatted_time'] = local_time.strftime('%I:%M %p')
+        else:
+            row['formatted_time'] = "N/A"
+
     cur.execute("""
         SELECT c.id as counter_id, c.name as counter_name, q.customer_name, q.id as queue_id
         FROM counters c 
@@ -101,7 +112,7 @@ def export_history():
     conn = get_db_connection()
     if not conn: return "DB Error", 500
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    # Added q.created_at to the export query
+    
     cur.execute("""
         SELECT q.id as ticket_id, q.customer_name, c.name as counter_served_by, q.created_at
         FROM que q 
@@ -115,10 +126,16 @@ def export_history():
 
     si = StringIO()
     cw = csv.writer(si)
-    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter', 'Date Joined'])
+    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter', 'Time Joined'])
+    
     for row in rows:
-        # Format the timestamp for the CSV
-        date_str = row['created_at'].strftime('%Y-%m-%d %H:%M:%S') if row['created_at'] else "N/A"
+        # --- FORMAT TIME FOR CSV EXPORT ---
+        if row['created_at']:
+            local_time = row['created_at'].astimezone(MANILA_TZ)
+            date_str = local_time.strftime('%Y-%m-%d %I:%M %p')
+        else:
+            date_str = "N/A"
+            
         cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by'], date_str])
     
     output = make_response(si.getvalue())
