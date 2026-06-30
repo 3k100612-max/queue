@@ -1,12 +1,13 @@
 import os
 import qrcode
-from io import BytesIO
-from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify
+import csv
+from io import BytesIO, StringIO
+from flask import Flask, render_template, request, redirect, url_for, send_file, make_response
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-# Load database credentials from .env file
+# Load environment variables
 load_dotenv()
 app = Flask(__name__)
 
@@ -98,6 +99,36 @@ def admin():
     conn.close()
     return render_template('admin.html', waiting=waiting, activity=activity)
 
+# --- CSV EXTRACTION (Full History) ---
+@app.route('/export_history')
+def export_history():
+    conn = get_db_connection()
+    if not conn: return "DB Error", 500
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Extract ALL completed records joined with the counters that served them
+    cur.execute("""
+        SELECT q.id as ticket_id, q.customer_name, c.name as counter_served_by
+        FROM que q 
+        JOIN counters c ON q.counter_id = c.id 
+        WHERE q.status = 'Completed' 
+        ORDER BY q.id ASC
+    """)
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter'])
+    for row in rows:
+        cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by']])
+    
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=full_service_history.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
+
 @app.route('/add_counter', methods=['POST'])
 def add_counter():
     name = request.form.get('counter_name')
@@ -149,5 +180,4 @@ def complete_serving(queue_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
-    # host 0.0.0.0 is required for Hostinger VPS access
     app.run(host='0.0.0.0', port=8080)
