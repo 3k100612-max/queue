@@ -2,60 +2,72 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Queue Dashboard</title>
+    <title>Queue Status</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     <style>
-        body { background-color: #f4f7f6; }
-        .hero { background: #003366; color: white; padding: 40px; text-align: center; margin-bottom: 30px; }
-        .serving-box { background: #fff; border: 3px solid #28a745; border-radius: 15px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        body { background-color: #001a33; color: white; height: 100vh; overflow: hidden; }
+        .left-panel { border-right: 4px solid #003366; height: 100vh; padding: 40px; overflow-y: auto; }
+        .right-panel { height: 100vh; padding: 40px; background: #fff; color: #333; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .serving-card { background: #f8f9fa; border-radius: 15px; border-left: 10px solid #28a745; margin-bottom: 20px; padding: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .qr-code-img { width: 300px; border: 10px solid #001a33; border-radius: 20px; }
     </style>
 </head>
 <body>
 
-<div class="hero shadow">
-    <h1>Now Serving</h1>
-    <p class="lead">Please proceed to your assigned counter</p>
-</div>
-
-<div class="container">
+<div class="container-fluid">
     <div class="row">
-        <!-- SERVING SECTION -->
-        <div class="col-md-8">
-            <h4 class="mb-3">Currently Serving</h4>
-            <div class="row">
-                {% for person in serving %}
-                <div class="col-md-6 mb-3">
-                    <div class="serving-box text-center">
-                        <h6 class="text-muted">COUNTER: {{ person.counter_name }}</h6>
-                        <h2 class="text-success">{{ person.name }}</h2>
-                        <div class="h5">TICKET #{{ person.id }}</div>
+        
+        <!-- ⬅️ LEFT SIDE: STATUS -->
+        <div class="col-md-7 left-panel">
+            <h1 class="display-4 fw-bold mb-5">Queue Status</h1>
+            
+            <div class="mb-5">
+                <h3 class="text-info border-bottom pb-2 mb-4">Currently Serving</h3>
+                <div class="row">
+                    {% for person in serving %}
+                    <div class="col-6">
+                        <div class="serving-card text-center">
+                            <small class="text-muted text-uppercase">Counter: {{ person.counter_name }}</small>
+                            <h2 class="fw-bold">{{ person.name }}</h2>
+                            <div class="badge bg-success h5">Ticket #{{ person.id }}</div>
+                        </div>
                     </div>
+                    {% else %}
+                    <div class="col-12 text-muted italic">Waiting for next customer...</div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
+            </div>
+
+            <div>
+                <h3 class="text-info border-bottom pb-2 mb-4">Waiting List ({{ queue|length }})</h3>
+                <div class="list-group">
+                    {% for person in queue %}
+                    <div class="list-group-item bg-dark text-white border-secondary d-flex justify-content-between h4 p-3">
+                        <span>{{ person.name }}</span>
+                        <span class="text-info">#{{ person.id }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
 
-        <!-- WAITING LIST -->
-        <div class="col-md-4">
-            <h5 class="mb-3">Waiting List ({{ queue|length }})</h5>
-            <div class="list-group shadow-sm">
-                {% for person in queue %}
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="mb-0">{{ person.name }}</h6>
-                        <small class="text-muted">Status: Waiting</small>
-                    </div>
-                    <span class="badge bg-primary rounded-pill">#{{ person.id }}</span>
-                </div>
-                {% endfor %}
+        <!-- ➡️ RIGHT SIDE: JOIN QR -->
+        <div class="col-md-5 right-panel">
+            <h1 class="display-5 fw-bold mb-3" style="color: #001a33;">Join the Queue</h1>
+            <p class="h4 mb-4 text-muted">Scan the QR code with your phone to check-in</p>
+            
+            <img src="/qr_code" class="qr-code-img shadow-lg mb-4">
+            
+            <div class="alert alert-primary h5">
+                Estimated Wait: <strong>{{ wait_time }} mins</strong>
             </div>
         </div>
+
     </div>
 </div>
 
 <script>
-    // Auto refresh every 10 seconds
+    // Auto-refresh the dashboard every 10 seconds to show new users
     setTimeout(function(){ location.reload(); }, 10000);
 </script>
 </body>
