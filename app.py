@@ -11,11 +11,11 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
+# Load variables from .env
 load_dotenv()
 app = Flask(__name__)
 
-# --- DATABASE LOGIC ---
-
+# --- DATABASE CONNECTION ---
 def get_db_connection():
     host = os.getenv('DB_HOST', '127.0.0.1')
     db = os.getenv('DB_NAME', 'queue')
@@ -25,13 +25,11 @@ def get_db_connection():
         conn = psycopg2.connect(host=host, database=db, user=user, password=pw, connect_timeout=5)
         return conn
     except Exception as e:
-        print(f"Database Error: {e}")
+        print(f"Connection Error: {e}")
         return None
 
-# --- UTILITY LOGIC ---
-
+# --- UTILITIES ---
 def get_local_ip():
-    """Gets the local IP address to create a scannable Join Link."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(('10.255.255.255', 1))
@@ -42,16 +40,15 @@ def get_local_ip():
         s.close()
     return IP
 
-# --- QR SCANNER LOGIC (OPENCV) ---
-
+# --- PHYSICAL QR SCANNER (Kiosk Mode) ---
 def run_qr_scanner():
-    """Runs in a separate thread to scan QR codes via webcam."""
+    """Background thread that uses the webcam to scan names into the queue."""
     cap = cv2.VideoCapture(0)
     last_scan_time = 0
     cooldown = 3 
     last_data = ""
 
-    print("--- Camera Scanner Started ---")
+    print("Scanner Thread: Active")
     while True:
         ret, frame = cap.read()
         if not ret: break
@@ -60,9 +57,8 @@ def run_qr_scanner():
             name = code.data.decode('utf-8')
             current_time = time.time()
 
-            # Prevent duplicate scans within the cooldown period
+            # Prevent rapid duplicate scans
             if name != last_data or (current_time - last_scan_time) > cooldown:
-                print(f"QR Scanned: {name}")
                 conn = get_db_connection()
                 if conn:
                     cur = conn.cursor()
@@ -73,22 +69,23 @@ def run_qr_scanner():
                     conn.commit()
                     cur.close()
                     conn.close()
+                    print(f"Added to Queue via QR: {name}")
                     last_data = name
                     last_scan_time = current_time
                 
-                # Draw a green box in the preview window
+                # Visual feedback on camera window
                 pts = code.polygon
                 if len(pts) == 4:
                     cv2.polylines(frame, [pts], True, (0, 255, 0), 3)
 
-        cv2.imshow('Kiosk QR Scanner (Press Q to Close Window)', frame)
+        cv2.imshow('Kiosk Scanner (Show QR to Camera)', frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
-# --- FLASK ROUTES ---
+# --- PUBLIC ROUTES ---
 
 @app.route('/')
 def index():
@@ -104,8 +101,6 @@ def index():
     serving_now = cur.fetchall()
     cur.close()
     conn.close()
-    
-    # Pass local_ip so the UI can show the URL next to the QR code
     return render_template('index.html', 
                            queue=waiting_list, 
                            serving=serving_now, 
@@ -114,13 +109,12 @@ def index():
 
 @app.route('/qr_code')
 def serve_qr():
-    """Generates the 'Join Link' QR code image dynamically."""
+    """Generates the QR code for phones to scan to open this website."""
     base_url = f"http://{get_local_ip()}:8080"
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(base_url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
-    
     buf = BytesIO()
     img.save(buf)
     buf.seek(0)
@@ -138,7 +132,7 @@ def join_queue():
         conn.close()
     return redirect(url_for('index'))
 
-# ... [Keep all your other admin routes (admin, assign, complete, etc.) here] ...
+# --- ADMIN ROUTES ---
 
 @app.route('/admin')
 def admin():
@@ -156,13 +150,74 @@ def admin():
     conn.close()
     return render_template('admin.html', waiting=waiting, activity=activity)
 
-# [Remaining admin routes: create_counter, edit_counter, delete_counter, assign_next, complete_serving]
+@app.route('/create_counter', methods=['POST'])
+def create_counter():
+    name = request.form.get('counter_name')
+    conn = get_db_connection()
+    if conn and name:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO counters (name) VALUES (%s)", (name,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+@app.route('/edit_counter/<int:counter_id>', methods=['POST'])
+def edit_counter(counter_id):
+    new_name = request.form.get('new_name')
+    conn = get_db_connection()
+    if conn and new_name:
+        cur = conn.cursor()
+        cur.execute("UPDATE counters SET name = %s WHERE id = %s", (new_name, counter_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+@app.route('/delete_counter/<int:counter_id>')
+def delete_counter(counter_id):
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE que SET counter_id = NULL WHERE counter_id = %s", (counter_id,))
+        cur.execute("DELETE FROM counters WHERE id = %s", (counter_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+@app.route('/assign/<int:counter_id>')
+def assign_next(counter_id):
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
+        next_p = cur.fetchone()
+        if next_p:
+            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", (counter_id, next_p[0]))
+            conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+@app.route('/complete/<int:queue_id>')
+def complete_serving(queue_id):
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (queue_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
+
+# --- STARTUP ---
 
 if __name__ == '__main__':
-    # Start the QR Scanner in a separate background thread
-    scanner_thread = threading.Thread(target=run_qr_scanner, daemon=True)
-    scanner_thread.start()
+    # Start the OpenCV camera scanner in a background thread
+    threading.Thread(target=run_qr_scanner, daemon=True).start()
 
-    # Start the Flask Web Server
+    # Start Flask
     port = int(os.environ.get('PORT', 8080))
+    # use_reloader=False is required to prevent the camera starting twice
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
