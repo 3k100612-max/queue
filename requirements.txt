@@ -1,4 +1,6 @@
 flask
 gunicorn
+opencv-python 
+pyzbar 
 psycopg2-binary
 python-dotenv
