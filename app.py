@@ -106,9 +106,13 @@ def export_history():
     if not conn: return "DB Error", 500
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
-    # Extract ALL completed records joined with the counters that served them
+    # Updated query to include created_at
     cur.execute("""
-        SELECT q.id as ticket_id, q.customer_name, c.name as counter_served_by
+        SELECT 
+            q.id as ticket_id, 
+            q.customer_name, 
+            c.name as counter_served_by,
+            q.created_at
         FROM que q 
         JOIN counters c ON q.counter_id = c.id 
         WHERE q.status = 'Completed' 
@@ -120,14 +124,19 @@ def export_history():
 
     si = StringIO()
     cw = csv.writer(si)
-    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter'])
+    # Added 'Date/Time Joined' to the header
+    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter', 'Date/Time Joined']) 
+    
     for row in rows:
-        cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by']])
+        # Format the date for better readability in Excel
+        formatted_date = row['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+        cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by'], formatted_date])
     
     output = make_response(si.getvalue())
     output.headers["Content-Disposition"] = "attachment; filename=full_service_history.csv"
     output.headers["Content-type"] = "text/csv"
     return output
+
 
 @app.route('/add_counter', methods=['POST'])
 def add_counter():
