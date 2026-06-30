@@ -7,11 +7,9 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 app = Flask(__name__)
 
-# --- DATABASE CONNECTION ---
 def get_db_connection():
     try:
         conn = psycopg2.connect(
@@ -26,32 +24,24 @@ def get_db_connection():
         print(f"Database Error: {e}")
         return None
 
-# --- PUBLIC DASHBOARD (Big Screen) ---
 @app.route('/')
 def index():
     conn = get_db_connection()
     if not conn: return "<h1>Database Offline</h1>", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Get Waiting List
-    cur.execute("SELECT id, customer_name, ticket_code, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    cur.execute("SELECT id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
-    
-    # Get Currently Serving
     cur.execute("""
         SELECT q.id, q.customer_name as name, c.name as counter_name 
         FROM que q JOIN counters c ON q.counter_id = c.id WHERE q.status = 'Serving'
     """)
     serving_now = cur.fetchall()
-    
     cur.close()
     conn.close()
     return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=len(waiting_list)*10)
 
-# --- QR CODE GENERATOR ---
 @app.route('/qr_code')
 def serve_qr():
-    """Generates a QR code pointing to the /join page for mobile users."""
     join_url = request.host_url + "join"
     qr = qrcode.make(join_url)
     buf = BytesIO()
@@ -59,7 +49,6 @@ def serve_qr():
     buf.seek(0)
     return send_file(buf, mimetype='image/png')
 
-# --- MOBILE JOIN PAGE ---
 @app.route('/join', methods=['GET', 'POST'])
 def join_queue():
     if request.method == 'POST':
@@ -75,18 +64,14 @@ def join_queue():
             return render_template('success.html', name=name)
     return render_template('join_form.html')
 
-# --- ADMIN PANEL (Staff Management) ---
 @app.route('/admin')
 def admin():
     conn = get_db_connection()
     if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # 1. Get Waiting Pool
-    cur.execute("SELECT id, customer_name, ticket_code FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    # Added created_at to the selection
+    cur.execute("SELECT id, customer_name, ticket_code, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
-    
-    # 2. Get All Counters and their current status
     cur.execute("""
         SELECT c.id as counter_id, c.name as counter_name, q.customer_name, q.id as queue_id
         FROM counters c 
@@ -94,25 +79,18 @@ def admin():
         ORDER BY c.id ASC
     """)
     activity = cur.fetchall()
-    
     cur.close()
     conn.close()
     return render_template('admin.html', waiting=waiting, activity=activity)
 
-# --- CSV EXTRACTION (Full History) ---
 @app.route('/export_history')
 def export_history():
     conn = get_db_connection()
     if not conn: return "DB Error", 500
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # Updated query to include created_at
+    # Added q.created_at to the export query
     cur.execute("""
-        SELECT 
-            q.id as ticket_id, 
-            q.customer_name, 
-            c.name as counter_served_by,
-            q.created_at
+        SELECT q.id as ticket_id, q.customer_name, c.name as counter_served_by, q.created_at
         FROM que q 
         JOIN counters c ON q.counter_id = c.id 
         WHERE q.status = 'Completed' 
@@ -124,19 +102,16 @@ def export_history():
 
     si = StringIO()
     cw = csv.writer(si)
-    # Added 'Date/Time Joined' to the header
-    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter', 'Date/Time Joined']) 
-    
+    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter', 'Date Joined'])
     for row in rows:
-        # Format the date for better readability in Excel
-        formatted_date = row['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-        cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by'], formatted_date])
+        # Format the timestamp for the CSV
+        date_str = row['created_at'].strftime('%Y-%m-%d %H:%M:%S') if row['created_at'] else "N/A"
+        cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by'], date_str])
     
     output = make_response(si.getvalue())
     output.headers["Content-Disposition"] = "attachment; filename=full_service_history.csv"
     output.headers["Content-type"] = "text/csv"
     return output
-
 
 @app.route('/add_counter', methods=['POST'])
 def add_counter():
