@@ -34,7 +34,7 @@ def index():
     cur = conn.cursor(cursor_factory=RealDictCursor)
     
     # Get Waiting List
-    cur.execute("SELECT id, customer_name as name FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    cur.execute("SELECT id, customer_name, ticket_code, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting_list = cur.fetchall()
     
     # Get Currently Serving
