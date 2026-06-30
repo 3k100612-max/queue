@@ -1,11 +1,12 @@
 import os
 import qrcode
 from io import BytesIO
-from flask import Flask, render_template, request, redirect, url_for, send_file
+from flask import Flask, render_template, request, redirect, url_for, send_file, jsonify
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
+# Load database credentials from .env
 load_dotenv()
 app = Flask(__name__)
 
@@ -24,7 +25,7 @@ def get_db_connection():
         print(f"Database Error: {e}")
         return None
 
-# --- MAIN DASHBOARD (Big Screen View) ---
+# --- PUBLIC DASHBOARD (The Big Screen) ---
 @app.route('/')
 def index():
     conn = get_db_connection()
@@ -45,14 +46,17 @@ def index():
     cur.close()
     conn.close()
     
-    # Pass the current host URL so the dashboard knows where to point users
-    return render_template('index.html', queue=waiting_list, serving=serving_now, wait_time=len(waiting_list)*10)
+    # Estimate: 10 mins per person in line
+    return render_template('index.html', 
+                           queue=waiting_list, 
+                           serving=serving_now, 
+                           wait_time=len(waiting_list)*10)
 
-# --- QR CODE GENERATOR ---
+# --- QR GENERATOR (Points to /join) ---
 @app.route('/qr_code')
 def serve_qr():
-    """Generates a QR code that opens the /join page on the user's phone."""
-    # This automatically detects your Hostinger domain/IP
+    """Generates the QR code that users scan with their own phones."""
+    # request.host_url automatically detects your Hostinger IP or Domain
     join_url = request.host_url + "join"
     qr = qrcode.make(join_url)
     buf = BytesIO()
@@ -60,7 +64,7 @@ def serve_qr():
     buf.seek(0)
     return send_file(buf, mimetype='image/png')
 
-# --- MOBILE JOIN PAGE (What users see on their phones) ---
+# --- MOBILE JOIN PAGE ---
 @app.route('/join', methods=['GET', 'POST'])
 def join_queue():
     if request.method == 'POST':
@@ -68,27 +72,34 @@ def join_queue():
         conn = get_db_connection()
         if conn and name:
             cur = conn.cursor()
-            cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", (name, 'MOBILE', 'Waiting'))
+            cur.execute("INSERT INTO que (customer_name, ticket_code, status) VALUES (%s, %s, %s)", 
+                        (name, 'MOBILE', 'Waiting'))
             conn.commit()
             cur.close()
             conn.close()
             return render_template('success.html', name=name)
-    
     return render_template('join_form.html')
 
-# --- ADMIN ROUTES (Staff Panel) ---
+# --- ADMIN PANEL (Staff Management) ---
 @app.route('/admin')
 def admin():
     conn = get_db_connection()
     if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # 1. Get everyone waiting
     cur.execute("SELECT id, customer_name, ticket_code FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
+    
+    # 2. Get all counters and their current activity
     cur.execute("""
-        SELECT c.id as counter_id, c.name as counter_name, q.ticket_code, q.customer_name, q.id as queue_id
-        FROM counters c LEFT JOIN que q ON c.id = q.counter_id AND q.status = 'Serving' ORDER BY c.id ASC
+        SELECT c.id as counter_id, c.name as counter_name, q.customer_name, q.id as queue_id
+        FROM counters c 
+        LEFT JOIN que q ON c.id = q.counter_id AND q.status = 'Serving' 
+        ORDER BY c.id ASC
     """)
     activity = cur.fetchall()
+    
     cur.close()
     conn.close()
     return render_template('admin.html', waiting=waiting, activity=activity)
@@ -98,10 +109,12 @@ def assign_next(counter_id):
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
+        # Find the person waiting the longest
         cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
         next_p = cur.fetchone()
         if next_p:
-            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", (counter_id, next_p[0]))
+            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", 
+                        (counter_id, next_p[0]))
             conn.commit()
         cur.close()
         conn.close()
@@ -119,4 +132,5 @@ def complete_serving(queue_id):
     return redirect(url_for('admin'))
 
 if __name__ == '__main__':
+    # Listen on all IPs for Hostinger VPS access
     app.run(host='0.0.0.0', port=8080)
