@@ -3,128 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Customer Queue</title>
-
+    <title>Queue Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-
     <style>
         body { background-color: #f4f7f6; }
-
-        .hero {
-            background: #003366;
-            color: white;
-            padding: 30px 0;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .serving-box {
-            background: #fff;
-            border: 3px solid #28a745;
-            border-radius: 15px;
-            padding: 25px;
-            height: 100%;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-
-        .serving-box h3 {
-            font-size: 1.6rem;
-        }
-
-        .ticket-badge {
-            font-size: 1.3rem;
-            font-weight: bold;
-        }
-
-        /* QR Code Styling */
-        .qr-section {
-            background: #ffffff;
-            border: 1px dashed #dee2e6;
-            border-radius: 10px;
-            padding: 20px;
-            margin-top: 20px;
-        }
-        .qr-image {
-            width: 100%;
-            max-width: 200px;
-            height: auto;
-            display: block;
-            margin: 0 auto;
-        }
+        .hero { background: #003366; color: white; padding: 40px; text-align: center; margin-bottom: 30px; }
+        .serving-box { background: #fff; border: 3px solid #28a745; border-radius: 15px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
     </style>
 </head>
-
 <body>
 
 <div class="hero shadow">
-    <h1>Virtual Check-In</h1>
-    <p class="lead">Estimated Wait: <strong>{{ wait_time }} mins</strong></p>
+    <h1>Now Serving</h1>
+    <p class="lead">Please proceed to your assigned counter</p>
 </div>
 
 <div class="container">
     <div class="row">
-
-        <!-- ✅ LEFT SIDE: USER INPUT & QR JOIN LINK -->
-        <div class="col-md-4">
-            <div class="card p-4 shadow-sm">
-                <h5 class="mb-3">Join the Line</h5>
-
-                <form action="/join" method="POST">
-                    <div class="mb-3">
-                        <label class="form-label">Your Name</label>
-                        <input type="text" name="name" class="form-control" placeholder="Enter your name" required>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary w-100">Get Ticket</button>
-                </form>
-
-                <!-- ✅ QR CODE FOR MOBILE JOINING -->
-                <div class="qr-section text-center shadow-sm">
-                    <h6 class="text-muted mb-2">Scan to Join via Mobile</h6>
-                    <img src="{{ url_for('serve_qr') }}" alt="QR Join Link" class="qr-image mb-2">
-                    <p class="small text-muted mb-0">Or visit:</p>
-                    <code class="d-block bg-light p-1 rounded">http://{{ local_ip }}:8080</code>
-                </div>
-            </div>
-        </div>
-
-
-        <!-- ✅ RIGHT SIDE -->
+        <!-- SERVING SECTION -->
         <div class="col-md-8">
-
-            <!-- ✅ CURRENTLY SERVING -->
             <h4 class="mb-3">Currently Serving</h4>
-
             <div class="row">
-            {% if serving %}
                 {% for person in serving %}
-                <div class="col-lg-6 col-md-6 col-sm-12 mb-3">
+                <div class="col-md-6 mb-3">
                     <div class="serving-box text-center">
-                        <h6 class="text-muted">COUNTER</h6>
-                        <h5 class="fw-bold">{{ person.counter_name }}</h5>
-
-                        <hr>
-
-                        <h3 class="text-success">{{ person.name }}</h3>
-                        <div class="ticket-badge">TICKET: #{{ person.id }}</div>
+                        <h6 class="text-muted">COUNTER: {{ person.counter_name }}</h6>
+                        <h2 class="text-success">{{ person.name }}</h2>
+                        <div class="h5">TICKET #{{ person.id }}</div>
                     </div>
                 </div>
                 {% endfor %}
-            {% else %}
-                <div class="col-12">
-                    <div class="alert alert-light text-center border">
-                        No active counters at the moment.
-                    </div>
-                </div>
-            {% endif %}
             </div>
+        </div>
 
-
-            <!-- ✅ WAITING LIST -->
-            <h5 class="mt-4">Waiting List ({{ queue|length }})</h5>
-
+        <!-- WAITING LIST -->
+        <div class="col-md-4">
+            <h5 class="mb-3">Waiting List ({{ queue|length }})</h5>
             <div class="list-group shadow-sm">
-
                 {% for person in queue %}
                 <div class="list-group-item d-flex justify-content-between align-items-center">
                     <div>
@@ -133,26 +48,15 @@
                     </div>
                     <span class="badge bg-primary rounded-pill">#{{ person.id }}</span>
                 </div>
-                {% else %}
-                <div class="list-group-item text-center text-muted">
-                    The waiting list is empty.
-                </div>
                 {% endfor %}
-
             </div>
-
         </div>
     </div>
 </div>
 
-<footer class="text-center mt-5 mb-4 text-muted">
-    <p>&copy; 2026 TimothyBale Queue System</p>
-</footer>
-
 <script>
-    // Auto refresh every 10 seconds to show new scans automatically
+    // Auto refresh every 10 seconds
     setTimeout(function(){ location.reload(); }, 10000);
 </script>
-
 </body>
 </html>
