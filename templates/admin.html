@@ -2,132 +2,50 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard</title>
+    <title>Admin Panel</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <style>
-        body { background-color: #1a1a1a; color: #fff; min-height: 100vh; display: flex; flex-direction: column; }
-        .content { flex: 1; }
-        .admin-card { background: #2d2d2d; border: none; color: white; border-radius: 12px; }
-        .table { color: white; }
-        footer { padding: 20px 0; color: #888; }
-        .btn-finish { color: #ffc107; border-color: #ffc107; }
-        .btn-finish:hover { background-color: #ffc107; color: #000; }
-    </style>
 </head>
-<body>
-    <div class="content container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Staff Control Panel</h2>
-            <a href="/" class="btn btn-outline-info btn-sm">View Public Screen</a>
-        </div>
-
-        <div class="row">
-            <!-- LEFT COLUMN: COUNTER CONTROLS -->
-            <div class="col-md-5">
-                <div class="card admin-card p-4 shadow mb-4">
-                    <h5>Admin: Setup Counters</h5>
-                    <form action="/create_counter" method="POST" class="mt-3">
-                        <div class="input-group">
-                            <input type="text" name="counter_name" class="form-control bg-dark text-white border-secondary" placeholder="e.g. Counter A" required>
-                            <button class="btn btn-primary" type="submit">Add</button>
-                        </div>
-                    </form>
-                </div>
-
-                <div class="card admin-card p-4 shadow mb-4">
-                    <h5>Counter Management</h5>
-                    <hr class="border-secondary">
-                    
-                    {% if not activity %}
-                        <p class="text-muted text-center">No counters created yet.</p>
-                    {% endif %}
-
-                    {% for item in activity %}
-                    <div class="mb-3 p-3 rounded" style="background: #383838;">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div>
-                                <span class="badge bg-info text-dark mb-1">{{ item.counter_name }}</span>
-                                {% if item.ticket_code %}
-                                    <div class="h5 mb-0">{{ item.ticket_code }}</div>
-                                    <small class="text-muted">{{ item.customer_name }}</small>
-                                {% else %}
-                                    <div class="text-muted">Idle</div>
-                                {% endif %}
-                            </div>
-                            
-                            <div class="text-end">
-                                {% if item.ticket_code %}
-                                    <a href="{{ url_for('complete_serving', queue_id=item.queue_id) }}" class="btn btn-sm btn-finish mb-1 w-100">Finish</a>
-                                {% else %}
-                                    <a href="{{ url_for('assign_next', counter_id=item.counter_id) }}" 
-                                       class="btn btn-sm btn-primary mb-1 w-100 {% if not waiting %}disabled{% endif %}">
-                                       Call Next
-                                    </a>
-                                {% endif %}
-                                
-                                <div class="mt-2">
-                                    <button class="btn btn-link btn-sm text-warning p-0 me-2" onclick="toggleEdit('{{ item.counter_id }}')">Edit</button>
-                                    <a href="{{ url_for('delete_counter', counter_id=item.counter_id) }}" 
-                                       class="btn btn-link btn-sm text-danger p-0" 
-                                       onclick="return confirm('Delete this counter?')">Delete</a>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Hidden Edit Form -->
-                        <div id="edit-form-{{ item.counter_id }}" style="display: none;" class="mt-3 pt-2 border-top border-secondary">
-                            <form action="{{ url_for('edit_counter', counter_id=item.counter_id) }}" method="POST" class="input-group input-group-sm">
-                                <input type="text" name="new_name" class="form-control bg-dark text-white border-secondary" value="{{ item.counter_name }}">
-                                <button class="btn btn-success" type="submit">Save</button>
-                                <button class="btn btn-outline-secondary" type="button" onclick="toggleEdit('{{ item.counter_id }}')">X</button>
-                            </form>
-                        </div>
-                    </div>
+<body class="p-4">
+    <h2>Admin Dashboard</h2>
+    <hr>
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Counters</h4>
+            <table class="table">
+                <thead>
+                    <tr><th>Counter</th><th>Status</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                    {% for c in activity %}
+                    <tr>
+                        <td>{{ c.counter_name }}</td>
+                        <td>
+                            {% if c.customer_name %}
+                            Serving: <strong>{{ c.customer_name }}</strong>
+                            {% else %}
+                            <span class="text-muted">Idle</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if c.customer_name %}
+                            <a href="/complete/{{ c.queue_id }}" class="btn btn-sm btn-success">Complete</a>
+                            {% else %}
+                            <a href="/assign/{{ c.counter_id }}" class="btn btn-sm btn-primary">Call Next</a>
+                            {% endif %}
+                        </td>
+                    </tr>
                     {% endfor %}
-                </div>
-            </div>
-
-            <!-- RIGHT COLUMN: UPCOMING QUEUE -->
-            <div class="col-md-7">
-                <div class="card admin-card p-4 shadow">
-                    <h4>Upcoming Queue</h4>
-                    <table class="table table-hover mt-3">
-                        <thead>
-                            <tr class="text-secondary">
-                                <th>Ticket</th>
-                                <th>Name</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for person in waiting %}
-                            <tr>
-                                <td><code class="text-info">{{ person.ticket_code }}</code></td>
-                                <td>{{ person.customer_name }}</td>
-                                <td><span class="badge bg-secondary">Waiting</span></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                    {% if not waiting %}
-                        <p class="text-center text-muted">The queue is empty.</p>
-                    {% endif %}
-                </div>
-            </div>
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-6">
+            <h4>Waiting Pool</h4>
+            <ul class="list-group">
+                {% for p in waiting %}
+                <li class="list-group-item">{{ p.customer_name }} ({{ p.ticket_code }})</li>
+                {% endfor %}
+            </ul>
         </div>
     </div>
-
-    <footer class="text-center">
-        <hr style="width: 30%; margin: 0 auto 15px auto; border-color: #444;">
-        <p>@timothyBale 2026</p>
-    </footer>
-
-    <script>
-    function toggleEdit(id) {
-        var x = document.getElementById("edit-form-" + id);
-        x.style.display = (x.style.display === "none") ? "block" : "none";
-    }
-    </script>
 </body>
 </html>
