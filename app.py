@@ -61,22 +61,47 @@ def join_queue():
         conn = get_db_connection()
         if conn and name:
             cur = conn.cursor()
-            
-            # 1. Capture current time in Manila
             ph_time = datetime.now(MANILA_TZ)
             
-            # 2. Insert with explicit PHT timestamp
+            # Insert and get the ID back immediately
             cur.execute("""
                 INSERT INTO que (customer_name, ticket_code, status, created_at) 
-                VALUES (%s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s) RETURNING id
             """, (name, 'MOBILE', 'Waiting', ph_time))
             
+            new_ticket_id = cur.fetchone()[0]
             conn.commit()
             cur.close()
             conn.close()
-            return render_template('success.html', name=name)
+            
+            # REDIRECT to the status page (This stops the refresh problem)
+            return redirect(url_for('view_status', ticket_id=new_ticket_id))
+            
     return render_template('join_form.html')
 
+@app.route('/status/<int:ticket_id>')
+def view_status(ticket_id):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # 1. Get User Info
+    cur.execute("SELECT customer_name, status, counter_id FROM que WHERE id = %s", (ticket_id,))
+    user = cur.fetchone()
+    
+    # 2. Get People Ahead (IDs smaller than yours that are still waiting)
+    cur.execute("SELECT COUNT(*) FROM que WHERE status = 'Waiting' AND id < %s", (ticket_id,))
+    ahead = cur.fetchone()['count']
+    
+    # 3. Get Counter Name if serving
+    counter_name = "Counter"
+    if user['counter_id']:
+        cur.execute("SELECT name FROM counters WHERE id = %s", (user['counter_id'],))
+        res = cur.fetchone()
+        if res: counter_name = res['name']
+
+    cur.close()
+    conn.close()
+    return render_template('status.html', user=user, ahead=ahead, counter_name=counter_name)
 
 @app.route('/admin')
 def admin():
