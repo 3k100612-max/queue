@@ -218,5 +218,47 @@ def complete_serving(queue_id):
         conn.close()
     return redirect(url_for('admin'))
 
+@app.route('/safe_reset', methods=['POST'])
+def safe_reset():
+    conn = get_db_connection()
+    if not conn: return "Database Offline", 500
+    cur = conn.cursor()
+    
+    try:
+        # 1. ARCHIVE to the history table first
+        cur.execute("""
+            INSERT INTO que_history (original_id, customer_name, ticket_code, status, counter_id, created_at)
+            SELECT id, customer_name, ticket_code, status, counter_id, created_at FROM que
+        """)
+
+        # 2. CREATE A PHYSICAL CSV BACKUP on the server
+        # Create a 'backups' folder if it doesn't exist
+        if not os.path.exists('backups'):
+            os.makedirs('backups')
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"backups/queue_backup_{timestamp}.csv"
+        
+        cur.execute("SELECT * FROM que")
+        rows = cur.fetchall()
+        
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([desc[0] for desc in cur.description]) # Headers
+            writer.writerows(rows)
+
+        # 3. TRUNCATE the active queue
+        cur.execute("TRUNCATE TABLE que RESTART IDENTITY CASCADE")
+        
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return f"Error during reset: {e}", 500
+    finally:
+        cur.close()
+        conn.close()
+        
+    return redirect(url_for('admin_page')) # Redirect back to admin
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
