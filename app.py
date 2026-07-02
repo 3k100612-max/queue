@@ -260,5 +260,23 @@ def safe_reset():
         
     return redirect(url_for('admin_page')) # Redirect back to admin
 
+@app.route('/export_history')
+def export_history():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Query from the ARCHIVE table to get everything
+    cur.execute("SELECT * FROM que_history ORDER BY archived_at DESC")
+    rows = cur.fetchall()
+    
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow([desc[0] for desc in cur.description])
+    cw.writerows(rows)
+    
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = f"attachment; filename=full_history_{datetime.now().date()}.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
