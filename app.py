@@ -194,33 +194,52 @@ def safe_reset():
     conn = get_db_connection()
     if not conn: return "Database Offline", 500
     cur = conn.cursor()
+    
     try:
         # 1. Archive to history table
+        # We use 'id' from que as 'original_id' in history
         cur.execute("""
             INSERT INTO que_history (original_id, customer_name, ticket_code, status, counter_id, created_at)
             SELECT id, customer_name, ticket_code, status, counter_id, created_at FROM que
         """)
-        # 2. Physical CSV Backup
-        if not os.path.exists('backups'): os.makedirs('backups')
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"backups/queue_backup_{timestamp}.csv"
-        cur.execute("SELECT * FROM que")
-        rows = cur.fetchall()
-        with open(filename, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([desc[0] for desc in cur.description])
-            writer.writerows(rows)
-        # 3. Reset Table
+        
+        # 2. Reset the active table
         cur.execute("TRUNCATE TABLE que RESTART IDENTITY CASCADE")
+        
+        # COMMIT the database changes now so they are saved even if file writing fails
         conn.commit()
+        
+        # 3. Attempt physical CSV Backup (Optional)
+        try:
+            if not os.path.exists('backups'): 
+                os.makedirs('backups')
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"backups/queue_backup_{timestamp}.csv"
+            
+            # Note: Since we truncated 'que' above, we'd need to fetch 
+            # from 'que_history' if we want the data we just moved.
+            cur.execute("SELECT * FROM que_history WHERE archived_at >= NOW() - INTERVAL '1 minute'")
+            rows = cur.fetchall()
+            
+            if rows:
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([desc[0] for desc in cur.description])
+                    writer.writerows(rows)
+        except Exception as file_err:
+            print(f"File Backup Warning (Skipped): {file_err}")
+            # We don't return error here because the DB archive already succeeded
+
     except Exception as e:
         conn.rollback()
-        print(f"Reset Error: {e}")
-        return f"Error: {e}", 500
+        print(f"Database Reset Error: {e}")
+        return f"Database Error: {e}. Check if 'que_history' table exists.", 500
     finally:
         cur.close()
         conn.close()
-    return redirect(url_for('admin')) # FIXED: redirected to 'admin' instead of 'admin_page'
+        
+    return redirect(url_for('admin'))
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
