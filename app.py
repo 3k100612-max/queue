@@ -26,8 +26,10 @@ def get_db_connection():
         )
         return conn
     except Exception as e:
-        print(f"Database Error: {e}")
+        print(f"Database Connection Error: {e}")
         return None
+
+# --- PUBLIC ROUTES ---
 
 @app.route('/')
 def index():
@@ -90,19 +92,24 @@ def view_status(ticket_id):
     conn.close()
     return render_template('status.html', user=user, ahead=ahead, counter_name=counter_name)
 
+# --- STAFF ADMIN ROUTES ---
+
 @app.route('/admin')
 def admin():
     conn = get_db_connection()
     if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
+    
     cur.execute("SELECT id, customer_name, ticket_code, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
+
     for row in waiting:
         if row['created_at']:
             local_time = row['created_at'].astimezone(MANILA_TZ)
             row['formatted_time'] = local_time.strftime('%I:%M %p')
         else:
             row['formatted_time'] = "N/A"
+
     cur.execute("""
         SELECT c.id as counter_id, c.name as counter_name, q.customer_name, q.id as queue_id
         FROM counters c 
@@ -114,28 +121,42 @@ def admin():
     conn.close()
     return render_template('admin.html', waiting=waiting, activity=activity)
 
-@app.route('/export_history')
-def export_history():
+@app.route('/assign/<int:counter_id>')
+def assign_next(counter_id):
     conn = get_db_connection()
-    if not conn: return "DB Error", 500
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    # This now exports from the ARCHIVE table as you requested
-    cur.execute("SELECT * FROM que_history ORDER BY archived_at DESC")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    if conn:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        # 1. Get the next person in line
+        cur.execute("SELECT id, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
+        next_p = cur.fetchone()
+        
+        if next_p:
+            # 2. Calculate Wait Duration
+            now = datetime.now(MANILA_TZ)
+            created_at = next_p['created_at'].astimezone(MANILA_TZ)
+            wait_duration = now - created_at
+            
+            # 3. Update status and store the wait duration
+            cur.execute("""
+                UPDATE que 
+                SET status = 'Serving', counter_id = %s, wait_duration = %s 
+                WHERE id = %s
+            """, (counter_id, wait_duration, next_p['id']))
+            conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
 
-    si = StringIO()
-    cw = csv.writer(si)
-    if rows:
-        cw.writerow(rows[0].keys()) # Dynamic headers
-        for row in rows:
-            cw.writerow(row.values())
-    
-    output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = f"attachment; filename=full_history_{datetime.now().date()}.csv"
-    output.headers["Content-type"] = "text/csv"
-    return output
+@app.route('/complete/<int:queue_id>')
+def complete_serving(queue_id):
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (queue_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return redirect(url_for('admin'))
 
 @app.route('/add_counter', methods=['POST'])
 def add_counter():
@@ -155,7 +176,7 @@ def delete_counter(counter_id):
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
-        # First, detach any active tickets so we don't get a Foreign Key error
+        # Nullify references in 'que' table to prevent Foreign Key errors
         cur.execute("UPDATE que SET counter_id = NULL WHERE counter_id = %s", (counter_id,))
         cur.execute("DELETE FROM counters WHERE id = %s", (counter_id,))
         conn.commit()
@@ -163,83 +184,69 @@ def delete_counter(counter_id):
         conn.close()
     return redirect(url_for('admin'))
 
-@app.route('/assign/<int:counter_id>')
-def assign_next(counter_id):
-    conn = get_db_connection()
-    if conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM que WHERE status = 'Waiting' ORDER BY id ASC LIMIT 1")
-        next_p = cur.fetchone()
-        if next_p:
-            cur.execute("UPDATE que SET status = 'Serving', counter_id = %s WHERE id = %s", 
-                        (counter_id, next_p[0]))
-            conn.commit()
-        cur.close()
-        conn.close()
-    return redirect(url_for('admin'))
-
-@app.route('/complete/<int:queue_id>')
-def complete_serving(queue_id):
-    conn = get_db_connection()
-    if conn:
-        cur = conn.cursor()
-        cur.execute("UPDATE que SET status = 'Completed' WHERE id = %s", (queue_id,))
-        conn.commit()
-        cur.close()
-        conn.close()
-    return redirect(url_for('admin'))
+# --- ARCHIVE & HISTORY ROUTES ---
 
 @app.route('/safe_reset', methods=['POST'])
 def safe_reset():
     conn = get_db_connection()
     if not conn: return "Database Offline", 500
     cur = conn.cursor()
-    
     try:
-        # 1. Archive to history table
-        # We use 'id' from que as 'original_id' in history
+        # 1. Archive everything to history table (including wait_duration)
         cur.execute("""
-            INSERT INTO que_history (original_id, customer_name, ticket_code, status, counter_id, created_at)
-            SELECT id, customer_name, ticket_code, status, counter_id, created_at FROM que
+            INSERT INTO que_history (original_id, customer_name, ticket_code, status, counter_id, created_at, wait_duration)
+            SELECT id, customer_name, ticket_code, status, counter_id, created_at, wait_duration FROM que
         """)
-        
-        # 2. Reset the active table
+        # 2. Reset the active queue table
         cur.execute("TRUNCATE TABLE que RESTART IDENTITY CASCADE")
-        
-        # COMMIT the database changes now so they are saved even if file writing fails
         conn.commit()
-        
-        # 3. Attempt physical CSV Backup (Optional)
-        try:
-            if not os.path.exists('backups'): 
-                os.makedirs('backups')
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"backups/queue_backup_{timestamp}.csv"
-            
-            # Note: Since we truncated 'que' above, we'd need to fetch 
-            # from 'que_history' if we want the data we just moved.
-            cur.execute("SELECT * FROM que_history WHERE archived_at >= NOW() - INTERVAL '1 minute'")
-            rows = cur.fetchall()
-            
-            if rows:
-                with open(filename, 'w', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([desc[0] for desc in cur.description])
-                    writer.writerows(rows)
-        except Exception as file_err:
-            print(f"File Backup Warning (Skipped): {file_err}")
-            # We don't return error here because the DB archive already succeeded
 
+        # 3. Physical CSV Backup on Server
+        if not os.path.exists('backups'): os.makedirs('backups')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        cur.execute("SELECT * FROM que_history WHERE archived_at >= NOW() - INTERVAL '1 minute'")
+        rows = cur.fetchall()
+        with open(f"backups/backup_{timestamp}.csv", 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([desc[0] for desc in cur.description])
+            writer.writerows(rows)
+            
     except Exception as e:
         conn.rollback()
-        print(f"Database Reset Error: {e}")
-        return f"Database Error: {e}. Check if 'que_history' table exists.", 500
+        print(f"Reset Error: {e}")
+        return f"Error: {e}", 500
     finally:
         cur.close()
         conn.close()
-        
     return redirect(url_for('admin'))
+
+@app.route('/export_history')
+def export_history():
+    conn = get_db_connection()
+    if not conn: return "DB Error", 500
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    # Exports from the ARCHIVE table
+    cur.execute("SELECT * FROM que_history ORDER BY archived_at DESC")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Ticket ID', 'Customer', 'Status', 'Counter ID', 'Time Joined', 'Wait Time', 'Archived At'])
+    
+    for row in rows:
+        # Format the Wait Time Interval to HH:MM:SS
+        wait_str = str(row['wait_duration']).split('.')[0] if row['wait_duration'] else "0:00:00"
+        joined = row['created_at'].strftime('%Y-%m-%d %I:%M %p') if row['created_at'] else "N/A"
+        archived = row['archived_at'].strftime('%Y-%m-%d %I:%M %p') if row['archived_at'] else "N/A"
+        
+        cw.writerow([row['original_id'], row['customer_name'], row['status'], row['counter_id'], joined, wait_str, archived])
+    
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = f"attachment; filename=queue_history_{datetime.now().date()}.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
