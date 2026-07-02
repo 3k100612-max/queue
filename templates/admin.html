@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta id="refresh-meta" http-equiv="refresh" content="10">
+    <!-- REMOVED META REFRESH -->
     <title>Staff Admin - Management</title>
     
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
@@ -13,24 +13,12 @@
         body { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
         .counter-card { border-radius: 12px; transition: 0.3s; position: relative; border: none; }
         .counter-card.active { border: 2px solid #28a745; background-color: #f0fff4; }
-        
-        /* Delete Button - Locked State */
-        .btn-delete { 
-            position: absolute; top: 12px; right: 12px; 
-            color: #6c757d; text-decoration: none; 
-            font-size: 1.2rem; opacity: 0.2; cursor: not-allowed;
-        }
-
-        /* Delete Button - Unlocked State */
-        .unlocked .btn-delete { 
-            color: #dc3545; opacity: 0.6; cursor: pointer;
-        }
+        .btn-delete { position: absolute; top: 12px; right: 12px; color: #6c757d; text-decoration: none; font-size: 1.2rem; opacity: 0.2; cursor: not-allowed; }
+        .unlocked .btn-delete { color: #dc3545; opacity: 0.6; cursor: pointer; }
         .unlocked .btn-delete:hover { opacity: 1; transform: scale(1.1); }
-
         .status-banner { font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-top: 5px; }
         .status-locked { background: #e9ecef; color: #495057; }
         .status-unlocked { background: #fff3cd; color: #856404; animation: pulse 2s infinite; }
-        
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         .dot { height: 8px; width: 8px; background-color: #28a745; border-radius: 50%; display: inline-block; animation: blink 1s infinite; margin-right: 5px; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
@@ -44,8 +32,6 @@
                     <h2 class="mb-0">Queue Management</h2>
                     <div class="d-flex align-items-center gap-2">
                         <div style="font-size: 0.8rem; color: #28a745; font-weight: bold;"><span class="dot"></span>LIVE</div>
-                        
-                        <!-- System Lock Status -->
                         {% if session.get('management_unlocked') %}
                             <span class="status-banner status-unlocked"><i class="fas fa-unlock"></i> Counter Editing Unlocked</span>
                         {% else %}
@@ -55,14 +41,10 @@
                 </div>
                 
                 <div class="d-flex gap-2">
-                    <form action="/safe_reset" method="POST" onsubmit="return confirm('This will ARCHIVE all data and UNLOCK counter deletion. Continue?')">
-                        <button type="submit" class="btn btn-danger shadow-sm">
-                            <i class="fas fa-archive"></i> Archive & Reset
-                        </button>
+                    <form action="/safe_reset" method="POST" onsubmit="return confirm('Archive data and unlock deletion?')">
+                        <button type="submit" class="btn btn-danger shadow-sm"><i class="fas fa-archive"></i> Archive & Reset</button>
                     </form>
-
                     <a href="/export_history" class="btn btn-success shadow-sm"><i class="fas fa-download"></i> CSV</a>
-                    
                     <form action="/add_counter" method="POST" class="d-flex gap-2">
                         <input type="text" name="counter_name" id="counterInput" class="form-control" placeholder="New Counter" required>
                         <button type="submit" class="btn btn-dark">+ Add</button>
@@ -78,18 +60,11 @@
                     {% for c in activity %}
                     <div class="col-md-6 mb-4">
                         <div class="card counter-card h-100 shadow-sm {% if c.customer_name %}active{% endif %}">
-                            
-                            <!-- Delete logic checks session -->
                             {% if session.get('management_unlocked') %}
-                                <a href="/delete_counter/{{ c.counter_id }}" class="btn-delete" onclick="return confirm('Delete this counter?')">
-                                    <i class="fas fa-times-circle"></i>
-                                </a>
+                                <a href="/delete_counter/{{ c.counter_id }}" class="btn-delete" onclick="return confirm('Delete this counter?')"><i class="fas fa-times-circle"></i></a>
                             {% else %}
-                                <span class="btn-delete" title="Reset system to unlock deletion">
-                                    <i class="fas fa-lock"></i>
-                                </span>
+                                <span class="btn-delete" title="Reset system to unlock deletion"><i class="fas fa-lock"></i></span>
                             {% endif %}
-
                             <div class="card-body text-center">
                                 <h6 class="text-uppercase text-muted small fw-bold">{{ c.counter_name }}</h6>
                                 <hr>
@@ -108,14 +83,16 @@
                 </div>
             </div>
 
-            <!-- Waiting Pool -->
+            <!-- Waiting Pool Section (Updated via AJAX) -->
             <div class="col-md-4">
                 <div class="card shadow-sm">
                     <div class="card-header bg-dark text-white d-flex justify-content-between">
                         <span>Waiting Pool</span>
-                        <span class="badge bg-primary">{{ waiting|length }}</span>
+                        <!-- ID ADDED HERE -->
+                        <span id="waiting-badge" class="badge bg-primary">{{ waiting|length }}</span>
                     </div>
-                    <div class="list-group list-group-flush">
+                    <!-- ID ADDED HERE -->
+                    <div id="waiting-list" class="list-group list-group-flush">
                         {% for p in waiting %}
                         <div class="list-group-item d-flex justify-content-between align-items-center py-3">
                             <div><strong>{{ p.customer_name }}</strong><br><small class="text-muted">{{p.formatted_time}}</small></div>
@@ -131,10 +108,46 @@
     </div>
 
     <script>
+        // 1. Function to update the Waiting Pool
+        async function updateWaitingPool() {
+            try {
+                const response = await fetch('/api/waiting_data');
+                const data = await response.json();
+                
+                const badge = document.getElementById('waiting-badge');
+                const list = document.getElementById('waiting-list');
+                
+                // Update Badge Count
+                badge.innerText = data.length;
+                
+                // Update List Content
+                if (data.length === 0) {
+                    list.innerHTML = '<div class="list-group-item text-center text-muted py-4">Queue is empty</div>';
+                } else {
+                    let html = '';
+                    data.forEach(p => {
+                        html += `
+                        <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+                            <div>
+                                <strong>${p.customer_name}</strong><br>
+                                <small class="text-muted"><i class="far fa-clock"></i> ${p.formatted_time}</small>
+                            </div>
+                            <span class="badge bg-secondary">#${p.id}</span>
+                        </div>`;
+                    });
+                    list.innerHTML = html;
+                }
+            } catch (err) {
+                console.error("Error fetching waiting pool:", err);
+            }
+        }
+
+        // 2. Set interval to 1 second (1000ms)
+        setInterval(updateWaitingPool, 1000);
+
+        // 3. Keep your existing input focus logic
         const counterInput = document.getElementById('counterInput');
-        const refreshMeta = document.getElementById('refresh-meta');
-        counterInput.addEventListener('focus', () => { refreshMeta.setAttribute('content', '999999'); });
-        counterInput.addEventListener('blur', () => { refreshMeta.setAttribute('content', '10'); });
+        counterInput.addEventListener('focus', () => { /* No longer need to change meta content */ });
     </script>
 </body>
 </html>
