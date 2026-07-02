@@ -8,6 +8,7 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from datetime import datetime
 import pytz
+from flask import jsonify
 
 load_dotenv()
 app = Flask(__name__)
@@ -272,6 +273,28 @@ def export_history():
     output.headers["Content-Disposition"] = f"attachment; filename=detailed_history_{datetime.now().date()}.csv"
     output.headers["Content-type"] = "text/csv"
     return output
+
+@app.route('/api/waiting_data')
+def waiting_data():
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # Fetch waiting list
+    cur.execute("SELECT id, customer_name, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
+    waiting = cur.fetchall()
+    
+    # Format time for JSON (Python datetime objects can't be sent directly as JSON)
+    for row in waiting:
+        if row['created_at']:
+            local_time = row['created_at'].astimezone(MANILA_TZ)
+            row['formatted_time'] = local_time.strftime('%I:%M %p')
+        else:
+            row['formatted_time'] = "N/A"
+        del row['created_at'] # Remove the object to avoid JSON errors
+
+    cur.close()
+    conn.close()
+    return jsonify(waiting)
 
 
 if __name__ == '__main__':
