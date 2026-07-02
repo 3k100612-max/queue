@@ -62,43 +62,30 @@ def join_queue():
         if conn and name:
             cur = conn.cursor()
             ph_time = datetime.now(MANILA_TZ)
-            
-            # Insert and get the ID back immediately
             cur.execute("""
                 INSERT INTO que (customer_name, ticket_code, status, created_at) 
                 VALUES (%s, %s, %s, %s) RETURNING id
             """, (name, 'MOBILE', 'Waiting', ph_time))
-            
             new_ticket_id = cur.fetchone()[0]
             conn.commit()
             cur.close()
             conn.close()
-            
-            # REDIRECT to the status page (This stops the refresh problem)
             return redirect(url_for('view_status', ticket_id=new_ticket_id))
-            
     return render_template('join_form.html')
 
 @app.route('/status/<int:ticket_id>')
 def view_status(ticket_id):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    # 1. Get User Info
     cur.execute("SELECT customer_name, status, counter_id FROM que WHERE id = %s", (ticket_id,))
     user = cur.fetchone()
-    
-    # 2. Get People Ahead (IDs smaller than yours that are still waiting)
     cur.execute("SELECT COUNT(*) FROM que WHERE status = 'Waiting' AND id < %s", (ticket_id,))
     ahead = cur.fetchone()['count']
-    
-    # 3. Get Counter Name if serving
     counter_name = "Counter"
-    if user['counter_id']:
+    if user and user['counter_id']:
         cur.execute("SELECT name FROM counters WHERE id = %s", (user['counter_id'],))
         res = cur.fetchone()
         if res: counter_name = res['name']
-
     cur.close()
     conn.close()
     return render_template('status.html', user=user, ahead=ahead, counter_name=counter_name)
@@ -108,19 +95,14 @@ def admin():
     conn = get_db_connection()
     if not conn: return "DB Error", 200
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
     cur.execute("SELECT id, customer_name, ticket_code, created_at FROM que WHERE status = 'Waiting' ORDER BY id ASC")
     waiting = cur.fetchall()
-
-    # --- FORMAT TIME FOR ADMIN DISPLAY ---
     for row in waiting:
         if row['created_at']:
-            # Convert DB time to Manila TZ and format to 12-hour AM/PM
             local_time = row['created_at'].astimezone(MANILA_TZ)
             row['formatted_time'] = local_time.strftime('%I:%M %p')
         else:
             row['formatted_time'] = "N/A"
-
     cur.execute("""
         SELECT c.id as counter_id, c.name as counter_name, q.customer_name, q.id as queue_id
         FROM counters c 
@@ -137,34 +119,21 @@ def export_history():
     conn = get_db_connection()
     if not conn: return "DB Error", 500
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
-    cur.execute("""
-        SELECT q.id as ticket_id, q.customer_name, c.name as counter_served_by, q.created_at
-        FROM que q 
-        JOIN counters c ON q.counter_id = c.id 
-        WHERE q.status = 'Completed' 
-        ORDER BY q.id ASC
-    """)
+    # This now exports from the ARCHIVE table as you requested
+    cur.execute("SELECT * FROM que_history ORDER BY archived_at DESC")
     rows = cur.fetchall()
     cur.close()
     conn.close()
 
     si = StringIO()
     cw = csv.writer(si)
-    cw.writerow(['Ticket ID', 'Customer Name', 'Served By Counter', 'Time Joined'])
-    
-    for row in rows:
-        # --- FORMAT TIME FOR CSV EXPORT ---
-        if row['created_at']:
-            local_time = row['created_at'].astimezone(MANILA_TZ)
-            date_str = local_time.strftime('%Y-%m-%d %I:%M %p')
-        else:
-            date_str = "N/A"
-            
-        cw.writerow([row['ticket_id'], row['customer_name'], row['counter_served_by'], date_str])
+    if rows:
+        cw.writerow(rows[0].keys()) # Dynamic headers
+        for row in rows:
+            cw.writerow(row.values())
     
     output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = "attachment; filename=full_service_history.csv"
+    output.headers["Content-Disposition"] = f"attachment; filename=full_history_{datetime.now().date()}.csv"
     output.headers["Content-type"] = "text/csv"
     return output
 
@@ -186,6 +155,8 @@ def delete_counter(counter_id):
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
+        # First, detach any active tickets so we don't get a Foreign Key error
+        cur.execute("UPDATE que SET counter_id = NULL WHERE counter_id = %s", (counter_id,))
         cur.execute("DELETE FROM counters WHERE id = %s", (counter_id,))
         conn.commit()
         cur.close()
@@ -223,60 +194,33 @@ def safe_reset():
     conn = get_db_connection()
     if not conn: return "Database Offline", 500
     cur = conn.cursor()
-    
     try:
-        # 1. ARCHIVE to the history table first
+        # 1. Archive to history table
         cur.execute("""
             INSERT INTO que_history (original_id, customer_name, ticket_code, status, counter_id, created_at)
             SELECT id, customer_name, ticket_code, status, counter_id, created_at FROM que
         """)
-
-        # 2. CREATE A PHYSICAL CSV BACKUP on the server
-        # Create a 'backups' folder if it doesn't exist
-        if not os.path.exists('backups'):
-            os.makedirs('backups')
-            
+        # 2. Physical CSV Backup
+        if not os.path.exists('backups'): os.makedirs('backups')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"backups/queue_backup_{timestamp}.csv"
-        
         cur.execute("SELECT * FROM que")
         rows = cur.fetchall()
-        
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([desc[0] for desc in cur.description]) # Headers
+            writer.writerow([desc[0] for desc in cur.description])
             writer.writerows(rows)
-
-        # 3. TRUNCATE the active queue
+        # 3. Reset Table
         cur.execute("TRUNCATE TABLE que RESTART IDENTITY CASCADE")
-        
         conn.commit()
     except Exception as e:
         conn.rollback()
-        return f"Error during reset: {e}", 500
+        print(f"Reset Error: {e}")
+        return f"Error: {e}", 500
     finally:
         cur.close()
         conn.close()
-        
-    return redirect(url_for('admin_page')) # Redirect back to admin
-
-@app.route('/export_history')
-def export_history():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Query from the ARCHIVE table to get everything
-    cur.execute("SELECT * FROM que_history ORDER BY archived_at DESC")
-    rows = cur.fetchall()
-    
-    si = StringIO()
-    cw = csv.writer(si)
-    cw.writerow([desc[0] for desc in cur.description])
-    cw.writerows(rows)
-    
-    output = make_response(si.getvalue())
-    output.headers["Content-Disposition"] = f"attachment; filename=full_history_{datetime.now().date()}.csv"
-    output.headers["Content-type"] = "text/csv"
-    return output
+    return redirect(url_for('admin')) # FIXED: redirected to 'admin' instead of 'admin_page'
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
